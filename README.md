@@ -11,7 +11,7 @@ This repository currently contains the first vertical-slice implementation:
 
 - A transport-agnostic AHP server core.
 - Compatibility tests against the published `@microsoft/agent-host-protocol` TypeScript client.
-- An in-memory session store behind a `SessionStore` interface.
+- In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - NATS transport adapters for both the server side and the TypeScript AHP client side.
@@ -31,7 +31,7 @@ The server is intended to be protocol-compliant with the Microsoft AHP TypeScrip
 
 Adapters are explicit plugins. Users import optional packages and wire them into the server deliberately; runtime package discovery is not part of the first design. The code is currently colocated in this repo to keep context close, but the boundaries are shaped so `ahp-codex-app-server`, `ahp-nats`, and later adapters can move to sibling packages.
 
-Initial state is in memory. Durable storage is expected later because devcontainers are rebuilt; the storage boundary already exists so a filesystem-backed event/session store can replace the in-memory store.
+State can start in memory for tests and short-lived runs, or use `FileSystemSessionStore` to persist session state into a mounted directory across devcontainer rebuilds. Adapter runtime handles are intentionally not serialized; provider sessions are recreated by adapter/server wiring.
 
 Security is scoped for local devcontainer/Docker-network use first. Remote and multi-tenant security are not implemented, but the transport and provider boundaries should not make that impossible later.
 
@@ -76,7 +76,7 @@ The adapter:
 - Maps `turn/completed` to `session/turnComplete`.
 - Responds to unknown CAS server requests with method-not-found.
 
-In this devcontainer, `codex app-server --listen unix:///tmp/ahp-server-cas-validation.sock` failed with `Operation not permitted`, so live CAS validation was performed with `codex app-server --listen ws://127.0.0.1:43123`. Unix socket support remains implemented in the client path, but the local Codex binary could not be made to listen on a Unix socket in this environment.
+When starting CAS over a Unix socket, place the socket under a private directory such as `/tmp/ahp-cas` with mode `700`. Codex secures the socket parent directory and will fail if asked to use a shared directory directly, such as `unix:///tmp/app-server-control.sock`.
 
 ## NATS Convention
 
@@ -94,6 +94,7 @@ The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token 
 ```ts
 import {
   AhpServer,
+  FileSystemSessionStore,
   createCodexAppServerProvider,
   createNatsServerTransport,
   ahpNatsSubjects,
@@ -105,6 +106,9 @@ const subjects = ahpNatsSubjects({
 });
 
 const server = new AhpServer({
+  store: new FileSystemSessionStore({
+    directory: '/workspace-storage/ahp-server',
+  }),
   providers: [
     createCodexAppServerProvider({
       socketPath: '/path/to/codex-app-server.sock',

@@ -1,5 +1,5 @@
 export { AhpServer } from './server.js';
-export { InMemorySessionStore } from './store.js';
+export { FileSystemSessionStore, InMemorySessionStore } from './store.js';
 export { InMemoryServerTransport, createInMemoryTransportPair } from './transport/in-memory.js';
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
 export {
@@ -23,6 +23,7 @@ export type {
   ServerTransport,
   SessionStore,
 } from './types.js';
+export type { FileSystemSessionStoreOptions } from './store.js';
 export type {
   CodexAppServerClient,
   CodexAppServerProviderOptions,

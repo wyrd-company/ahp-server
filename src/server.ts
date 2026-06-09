@@ -409,9 +409,10 @@ export class AhpServer {
   }
 
   private applySessionAction(uri: URI, action: StateAction, origin?: ActionEnvelope['origin']): void {
-    const session = this.requireSession(uri);
-    session.state = sessionReducer(session.state, action as SessionAction);
-    session.state.summary.modifiedAt = Date.now();
+    const session = this.store.updateSession(uri, stored => {
+      stored.state = sessionReducer(stored.state, action as SessionAction);
+      stored.state.summary.modifiedAt = Date.now();
+    });
     this.publishAction(uri, action, origin);
     this.publishRootNotification('root/sessionSummaryChanged', {
       channel: ROOT_URI,
