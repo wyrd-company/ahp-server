@@ -124,6 +124,7 @@ await server.accept(createNatsServerTransport({
 ```bash
 npm install
 npm run verify
+task live:vertical
 ```
 
 `npm run verify` runs:
@@ -135,6 +136,10 @@ npm run verify
 Live validation is opt-in because it requires external processes and, for the full CAS turn, model access:
 
 ```bash
+# Preferred repeatable full validation. Starts Docker NATS and CAS over Unix socket
+# when NATS_URL and CODEX_APP_SERVER_URL/CODEX_APP_SERVER_SOCKET are not supplied.
+task live:vertical
+
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
 docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ahp-server-nats-validation

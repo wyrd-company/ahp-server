@@ -34,6 +34,7 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "test": "node --test --import tsx test/*.test.ts",
+    "test:live:vertical": "scripts/validate-live-vertical.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
   },
@@ -49,4 +50,3 @@
     "typescript": "^5.7.0"
   }
 }
-
