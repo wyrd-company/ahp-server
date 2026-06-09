@@ -288,6 +288,10 @@ export class AhpServer {
         type: ACTION.SessionCreationFailed,
         error: { errorType: 'provider.createSession', message },
       } as StateAction);
+      throw new AhpServerError(
+        JsonRpcErrorCodes.InternalError,
+        `provider.createSession failed: ${message}`,
+      );
     }
     return null;
   }

@@ -93,6 +93,45 @@ test('returns listSessions and fetchTurns results', async () => {
   const turns = await client.request('fetchTurns', { channel: sessionUri, limit: 20 });
   assert.deepEqual(turns, { turns: [], hasMore: false });
 
+  const { subscription } = await client.subscribe(sessionUri);
+  client.dispatch(sessionUri, {
+    type: 'session/turnStarted',
+    turnId: 'turn-1',
+    message: userMessage('Hello history'),
+  } as StateAction);
+  for (let i = 0; i < 4; i++) {
+    await subscription.next();
+  }
+
+  const completedTurns = await client.request('fetchTurns', { channel: sessionUri, limit: 20 });
+  assert.equal(completedTurns.turns.length, 1);
+  assert.equal(completedTurns.turns[0]?.id, 'turn-1');
+  assert.equal(completedTurns.turns[0]?.state, 'complete');
+  assert.equal(completedTurns.hasMore, false);
+
+  await client.shutdown();
+});
+
+test('returns createSession errors when provider startup fails', async () => {
+  const server = new AhpServer({ providers: [createFailingProvider()] });
+  const [clientTransport, serverTransport] = createInMemoryTransportPair();
+  runningServers.push(server.accept(serverTransport));
+
+  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  client.connect();
+  await client.initialize({ clientId: 'test-client', protocolVersions: ['0.3.0'] });
+
+  const sessionUri = 'ahp-session:/failed-session';
+  await assert.rejects(
+    () => client.request('createSession', { channel: sessionUri, provider: 'failing' }),
+    /provider\.createSession failed: adapter unavailable/,
+  );
+
+  const { result } = await client.subscribe(sessionUri);
+  const sessionState = result.snapshot?.state as SessionState | undefined;
+  assert.equal(sessionState?.lifecycle, 'creationFailed');
+  assert.equal(sessionState?.creationError?.message, 'adapter unavailable');
+
   await client.shutdown();
 });
 
@@ -137,6 +176,26 @@ function createEchoProvider(): AgentProvider {
           } as StateAction);
         },
       };
+    },
+  };
+}
+
+function createFailingProvider(): AgentProvider {
+  return {
+    agent: {
+      provider: 'failing',
+      displayName: 'Failing Agent',
+      description: 'Test agent that fails during startup.',
+      models: [
+        {
+          id: 'failing',
+          provider: 'failing',
+          name: 'Failing',
+        },
+      ],
+    },
+    createSession(): AgentSession {
+      throw new Error('adapter unavailable');
     },
   };
 }
