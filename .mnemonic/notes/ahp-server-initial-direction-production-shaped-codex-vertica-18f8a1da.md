@@ -8,7 +8,7 @@ tags:
   - adapters
 lifecycle: permanent
 createdAt: '2026-06-09T06:27:49.742Z'
-updatedAt: '2026-06-09T06:58:24.793Z'
+updatedAt: '2026-06-09T13:56:24.847Z'
 role: decision
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -48,3 +48,17 @@ Implementation outcome on 2026-06-09:
 - Added tests against the published Microsoft AHP TypeScript client, a fake CAS client, and a fake NATS broker.
 - `npm run verify` passed after implementation.
 - Created local commits through `92d47b5 chore: simplify NATS transport publish path`; branch was ahead of origin and not pushed.
+
+Live validation correction on 2026-06-09:
+
+- Bob challenged that the first vertical slice was not actually delivered while NATS and CAS were only tested with fakes. That challenge was correct.
+- Added gated live tests for real NATS, real CAS, and the combined vertical slice.
+- Started a real NATS Docker container with `nats:2.10-alpine -js`; localhost from the devcontainer could not reach it, but the container IP worked (`nats://172.17.0.11:4222` during validation).
+- The live NATS test exposed a real first-message race: the client could publish before server-side subscription registration had flushed to the broker. Added `ready()` to the NATS transports and live tests now wait for readiness before sending frames.
+- `codex app-server --listen unix:///tmp/ahp-server-cas-validation.sock` failed in this devcontainer with `Operation not permitted`, so live CAS validation used `codex app-server --listen ws://127.0.0.1:43123`.
+- Added `webSocketUrl` support to the CAS client/provider for validation and non-target local deployments while keeping Unix `socketPath` support.
+- Live CAS session creation passed against the real Codex App Server.
+- Live CAS streamed-turn validation initially failed with model `gpt-5`; CAS returned that `gpt-5` is not supported with this ChatGPT account. Querying `model/list` showed `gpt-5.5` as default, and live streamed-turn validation passed with `CODEX_E2E_MODEL=gpt-5.5`.
+- The combined live path passed: real NATS client transport -> AHP server -> real Codex App Server -> streamed Codex response -> real NATS client transport.
+- Normal `npm run verify` passes with live tests skipped by default; the live combined command used was `NATS_URL=nats://172.17.0.11:4222 CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' node --test --import tsx test/live-vertical-slice.test.ts`.
+- Committed the validation changes in `c66d5ad test: add live NATS and CAS validation`.
