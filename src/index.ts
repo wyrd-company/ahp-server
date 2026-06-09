@@ -2,6 +2,13 @@ export { AhpServer } from './server.js';
 export { InMemorySessionStore } from './store.js';
 export { InMemoryServerTransport, createInMemoryTransportPair } from './transport/in-memory.js';
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
+export {
+  NatsAhpClientTransport,
+  NatsServerTransport,
+  ahpNatsSubjects,
+  createNatsAhpClientTransport,
+  createNatsServerTransport,
+} from './nats/index.js';
 export type {
   AgentProvider,
   AgentSession,
@@ -23,3 +30,9 @@ export type {
   CodexJsonRpcNotification,
   CodexServerRequestEvent,
 } from './codex-app-server/index.js';
+export type {
+  AhpNatsSubjectOptions,
+  AhpNatsSubjectPair,
+  AhpNatsTransportOptions,
+  NatsConnectionLike,
+} from './nats/index.js';
