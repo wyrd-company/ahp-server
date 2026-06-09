@@ -1,0 +1,52 @@
+{
+  "name": "@wyrd-company/ahp-server",
+  "version": "0.1.0",
+  "description": "Production-shaped TypeScript Agent Host Protocol server with pluggable agent adapters.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Wyrd Company",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wyrd-company/ahp-server.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./codex-app-server": {
+      "import": "./dist/codex-app-server/index.js",
+      "types": "./dist/codex-app-server/index.d.ts"
+    },
+    "./nats": {
+      "import": "./dist/nats/index.js",
+      "types": "./dist/nats/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@microsoft/agent-host-protocol": "^0.3.0",
+    "nats": "^2.29.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
+
