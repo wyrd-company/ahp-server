@@ -15,6 +15,7 @@ This repository currently contains the first vertical-slice implementation:
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - NATS transport adapters for both the server side and the TypeScript AHP client side.
+- Gated live integration tests for real NATS, real CAS, and the combined NATS -> AHP -> CAS -> NATS path.
 
 The first target demo is:
 
@@ -22,7 +23,7 @@ The first target demo is:
 NATS client -> AHP server -> Codex App Server Unix socket -> streamed Codex response -> NATS client
 ```
 
-The current tests validate the AHP client/server flow, CAS adapter mapping with a fake CAS client, and NATS subject routing with a fake in-process broker. A live CAS/NATS end-to-end validation is still future work.
+The normal test suite validates the AHP client/server flow, CAS adapter mapping with a fake CAS client, and NATS subject routing with a fake in-process broker. Gated live tests validate against real services when endpoints are provided.
 
 ## Design Direction
 
@@ -67,12 +68,15 @@ CAS uses WebSocket text frames over a Unix domain socket. Its protocol is JSON-R
 The adapter:
 
 - Connects to an already-running CAS Unix socket.
+- Can also connect to a CAS WebSocket URL for validation and non-target local deployments.
 - Sends `initialize`, then `initialized`.
 - Creates a CAS thread for each AHP session via `thread/start`.
 - Sends user turns via `turn/start`.
 - Maps `item/agentMessage/delta` to AHP markdown response parts and deltas.
 - Maps `turn/completed` to `session/turnComplete`.
 - Responds to unknown CAS server requests with method-not-found.
+
+In this devcontainer, `codex app-server --listen unix:///tmp/ahp-server-cas-validation.sock` failed with `Operation not permitted`, so live CAS validation was performed with `codex app-server --listen ws://127.0.0.1:43123`. Unix socket support remains implemented in the client path, but the local Codex binary could not be made to listen on a Unix socket in this environment.
 
 ## NATS Convention
 
@@ -128,6 +132,30 @@ npm run verify
 - Node test suite
 - Build
 
+Live validation is opt-in because it requires external processes and, for the full CAS turn, model access:
+
+```bash
+# Start NATS in Docker and discover its container IP.
+docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ahp-server-nats-validation
+
+# Start a real Codex App Server. WebSocket was used here because Unix socket listen failed in this devcontainer.
+codex app-server --listen ws://127.0.0.1:43123
+
+# Validate AHP over real NATS.
+NATS_URL=nats://<container-ip>:4222 node --test --import tsx test/nats-live.test.ts
+
+# Validate AHP backed by real CAS.
+CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 CODEX_E2E_MODEL=gpt-5.5 \
+  CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
+  node --test --import tsx test/codex-live.test.ts
+
+# Validate the full vertical slice.
+NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 \
+  CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
+  node --test --import tsx test/live-vertical-slice.test.ts
+```
+
 ## References
 
 - AHP protocol and TypeScript client: `/workspaces/references/agent-host-protocol`
@@ -138,11 +166,9 @@ npm run verify
 
 ## Planned Follow-Up
 
-- Live NATS validation against a real NATS server.
-- Live CAS validation against an already-running Codex App Server Unix socket.
+- Live CAS validation against an already-running Codex App Server Unix socket in an environment where `codex app-server --listen unix://...` is permitted.
 - Durable filesystem-backed session/event storage.
 - Extract adapter packages into sibling repos if that remains the preferred package layout.
 - Pi Agent adapter.
 - Claude Agent SDK and Cursor SDK risk spikes.
 - A2A adapter where one A2A task maps to one AHP session.
-

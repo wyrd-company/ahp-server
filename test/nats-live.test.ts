@@ -30,17 +30,21 @@ test('routes a real AHP session flow through a live NATS broker', {
   });
 
   const server = new AhpServer({ providers: [createLiveEchoProvider()] });
-  const serverRun = server.accept(new NatsServerTransport({
+  const serverTransport = new NatsServerTransport({
     connection: serverConnection,
     inboundSubject: subjects.clientToServer,
     outboundSubject: subjects.serverToClient,
-  }));
+  });
+  await serverTransport.ready();
+  const serverRun = server.accept(serverTransport);
 
-  const client = new AhpClient(new NatsAhpClientTransport({
+  const clientTransport = new NatsAhpClientTransport({
     connection: clientConnection,
     inboundSubject: subjects.serverToClient,
     outboundSubject: subjects.clientToServer,
-  }), { requestTimeoutMs: 2_000 });
+  });
+  await clientTransport.ready();
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 2_000 });
 
   try {
     client.connect();
@@ -130,4 +134,3 @@ function userMessage(text: string): Message {
     origin: { kind: 'user' as Message['origin']['kind'] },
   };
 }
-

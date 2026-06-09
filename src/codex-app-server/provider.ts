@@ -22,6 +22,7 @@ import {
 
 export interface CodexAppServerProviderOptions {
   readonly socketPath?: string;
+  readonly webSocketUrl?: string;
   readonly client?: CodexAppServerClient;
   readonly clientFactory?: () => CodexAppServerClient;
   readonly providerId?: string;
@@ -79,9 +80,14 @@ export function createCodexAppServerProvider(options: CodexAppServerProviderOpti
 
 function createSocketClient(options: CodexAppServerProviderOptions): CodexAppServerClient {
   if (!options.socketPath) {
-    throw new Error('Codex App Server socketPath is required when no client/clientFactory is provided');
+    if (!options.webSocketUrl) {
+      throw new Error('Codex App Server socketPath or webSocketUrl is required when no client/clientFactory is provided');
+    }
   }
-  return new CodexAppServerSocketClient({ socketPath: options.socketPath });
+  return new CodexAppServerSocketClient({
+    socketPath: options.socketPath,
+    webSocketUrl: options.webSocketUrl,
+  });
 }
 
 class CodexAHPAgentSession implements AgentSession {
@@ -140,8 +146,8 @@ class CodexAHPAgentSession implements AgentSession {
           return;
         }
         if (notification.method === 'error') {
-          const params = notification.params as { message?: string };
-          fail?.(new Error(params.message ?? 'Codex App Server reported an error'));
+          const params = notification.params as { message?: string } | undefined;
+          fail?.(new Error(params?.message ?? `Codex App Server reported an error: ${JSON.stringify(notification.params)}`));
         }
       } catch (error) {
         fail?.(error instanceof Error ? error : new Error(String(error)));
@@ -208,4 +214,3 @@ function uriToPath(uri: URI): string {
   }
   return fileURLToPath(uri);
 }
-

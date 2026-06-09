@@ -50,7 +50,8 @@ export interface CodexAppServerClient {
 }
 
 export interface CodexAppServerSocketClientOptions {
-  readonly socketPath: string;
+  readonly socketPath?: string;
+  readonly webSocketUrl?: string;
   readonly clientInfo?: {
     readonly name?: string;
     readonly title?: string | null;
@@ -138,13 +139,16 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
 
   private openWebSocket(): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket('ws://localhost/rpc', {
-        createConnection: () => net.connect(this.options.socketPath),
+      const socketPath = this.options.socketPath;
+      const ws = new WebSocket(this.options.webSocketUrl ?? 'ws://localhost/rpc', {
+        ...(socketPath
+          ? { createConnection: () => net.connect(socketPath) }
+          : {}),
         maxPayload: 128 << 20,
-      } as never);
+      });
       const timer = setTimeout(() => {
         ws.terminate();
-        reject(new Error(`timed out connecting to Codex App Server socket ${this.options.socketPath}`));
+        reject(new Error(`timed out connecting to Codex App Server ${this.describeEndpoint()}`));
       }, this.options.initializeTimeoutMs ?? 10_000);
       ws.once('open', () => {
         clearTimeout(timer);
@@ -155,6 +159,10 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
         reject(error);
       });
     });
+  }
+
+  private describeEndpoint(): string {
+    return this.options.socketPath ?? this.options.webSocketUrl ?? '(no endpoint configured)';
   }
 
   private send(message: CodexJsonRpcRequest | CodexJsonRpcNotification): void {
@@ -208,4 +216,3 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
     }
   }
 }
-

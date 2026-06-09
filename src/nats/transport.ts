@@ -6,6 +6,7 @@ import type { JsonRpcMessage as ServerJsonRpcMessage, ServerTransport } from '..
 export interface NatsConnectionLike {
   publish(subject: string, data?: Uint8Array): void;
   subscribe(subject: string): AsyncIterable<MsgLike> & { unsubscribe(): void };
+  flush?(): Promise<void>;
 }
 
 export interface MsgLike {
@@ -21,23 +22,31 @@ export interface AhpNatsTransportOptions {
 class NatsTextTransport {
   private readonly codec = StringCodec();
   private readonly subscription: Subscription | (AsyncIterable<MsgLike> & { unsubscribe(): void });
+  private readonly readyPromise: Promise<void>;
   private readonly inbox: Array<string | null> = [];
   private waiter: ((message: string | null) => void) | undefined;
   private closed = false;
 
   constructor(private readonly options: AhpNatsTransportOptions) {
     this.subscription = options.connection.subscribe(options.inboundSubject);
+    this.readyPromise = options.connection.flush?.() ?? Promise.resolve();
     void this.readLoop();
   }
 
-  sendText(text: string): void {
+  async ready(): Promise<void> {
+    await this.readyPromise;
+  }
+
+  async sendText(text: string): Promise<void> {
     if (this.closed) {
       throw new Error('NATS transport closed');
     }
+    await this.readyPromise;
     this.options.connection.publish(this.options.outboundSubject, this.codec.encode(text));
   }
 
-  recvText(): Promise<string | null> {
+  async recvText(): Promise<string | null> {
+    await this.readyPromise;
     const next = this.inbox.shift();
     if (next !== undefined) {
       return Promise.resolve(next);
@@ -87,8 +96,12 @@ export class NatsServerTransport implements ServerTransport {
     this.inner = new NatsTextTransport(options);
   }
 
-  send(message: ServerJsonRpcMessage | string): void {
-    this.inner.sendText(typeof message === 'string' ? message : JSON.stringify(message));
+  ready(): Promise<void> {
+    return this.inner.ready();
+  }
+
+  send(message: ServerJsonRpcMessage | string): Promise<void> {
+    return this.inner.sendText(typeof message === 'string' ? message : JSON.stringify(message));
   }
 
   async recv(): Promise<ServerJsonRpcMessage | string | null> {
@@ -108,8 +121,12 @@ export class NatsAhpClientTransport implements AhpTransport {
     this.inner = new NatsTextTransport(options);
   }
 
-  send(message: JsonRpcMessage | string): void {
-    this.inner.sendText(typeof message === 'string' ? message : JSON.stringify(message));
+  ready(): Promise<void> {
+    return this.inner.ready();
+  }
+
+  send(message: JsonRpcMessage | string): Promise<void> {
+    return this.inner.sendText(typeof message === 'string' ? message : JSON.stringify(message));
   }
 
   async recv(): Promise<TransportFrame | null> {
