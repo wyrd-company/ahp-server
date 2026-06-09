@@ -1,5 +1,5 @@
 import type { AhpTransport, JsonRpcMessage, TransportFrame } from '@microsoft/agent-host-protocol/client';
-import { StringCodec, type Msg, type NatsConnection, type Subscription } from 'nats';
+import { StringCodec, type NatsConnection, type Subscription } from 'nats';
 
 import type { JsonRpcMessage as ServerJsonRpcMessage, ServerTransport } from '../types.js';
 
@@ -34,7 +34,7 @@ class NatsTextTransport {
     if (this.closed) {
       throw new Error('NATS transport closed');
     }
-    this.options.connection.publish(optionsSubject(this.options.outboundSubject), this.codec.encode(text));
+    this.options.connection.publish(this.options.outboundSubject, this.codec.encode(text));
   }
 
   recvText(): Promise<string | null> {
@@ -129,10 +129,3 @@ export function createNatsServerTransport(options: AhpNatsTransportOptions): Ser
 export function createNatsAhpClientTransport(options: AhpNatsTransportOptions): AhpTransport {
   return new NatsAhpClientTransport(options);
 }
-
-function optionsSubject(subject: string): string {
-  return subject;
-}
-
-void (undefined as Msg | undefined);
-
