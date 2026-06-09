@@ -145,6 +145,7 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
           ? { createConnection: () => net.connect(socketPath) }
           : {}),
         maxPayload: 128 << 20,
+        perMessageDeflate: false,
       });
       const timer = setTimeout(() => {
         ws.terminate();

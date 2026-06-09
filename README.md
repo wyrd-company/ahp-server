@@ -139,8 +139,14 @@ Live validation is opt-in because it requires external processes and, for the fu
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
 docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ahp-server-nats-validation
 
-# Start a real Codex App Server. WebSocket was used here because Unix socket listen failed in this devcontainer.
+# Start a real Codex App Server over WebSocket.
 codex app-server --listen ws://127.0.0.1:43123
+
+# Or start CAS over a Unix socket. Use a private directory; Codex secures the socket
+# directory and will fail if asked to chmod a shared directory such as /tmp.
+mkdir -p /tmp/ahp-cas
+chmod 700 /tmp/ahp-cas
+codex app-server --listen unix:///tmp/ahp-cas/app-server-control.sock
 
 # Validate AHP over real NATS.
 NATS_URL=nats://<container-ip>:4222 node --test --import tsx test/nats-live.test.ts
@@ -150,8 +156,18 @@ CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 CODEX_E2E_MODEL=gpt-5.5 \
   CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
   node --test --import tsx test/codex-live.test.ts
 
+# Or validate against CAS over Unix socket.
+CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock CODEX_E2E_MODEL=gpt-5.5 \
+  CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
+  node --test --import tsx test/codex-live.test.ts
+
 # Validate the full vertical slice.
 NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 \
+  CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
+  node --test --import tsx test/live-vertical-slice.test.ts
+
+# Or validate the full vertical slice over NATS + CAS Unix socket.
+NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock \
   CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
   node --test --import tsx test/live-vertical-slice.test.ts
 ```
@@ -166,7 +182,6 @@ NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 \
 
 ## Planned Follow-Up
 
-- Live CAS validation against an already-running Codex App Server Unix socket in an environment where `codex app-server --listen unix://...` is permitted.
 - Durable filesystem-backed session/event storage.
 - Extract adapter packages into sibling repos if that remains the preferred package layout.
 - Pi Agent adapter.
