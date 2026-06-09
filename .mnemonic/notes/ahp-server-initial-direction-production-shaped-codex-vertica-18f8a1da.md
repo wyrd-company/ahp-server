@@ -8,7 +8,7 @@ tags:
   - adapters
 lifecycle: permanent
 createdAt: '2026-06-09T06:27:49.742Z'
-updatedAt: '2026-06-09T06:40:11.620Z'
+updatedAt: '2026-06-09T06:58:24.793Z'
 role: decision
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -37,3 +37,14 @@ Key decisions and constraints from Bob:
 - NPM scope is `@wyrd-company`, for example `@wyrd-company/ahp-server`.
 - Work should be production-shaped, with spike work permitted as needed in `/workspaces/worktrees/agent-control-plane/*`; this is a shared volume and other worktrees may exist.
 - GitHub Project status does not need to be considered for this effort.
+
+Implementation outcome on 2026-06-09:
+
+- Added package scaffold for `@wyrd-company/ahp-server` with TypeScript build, typecheck, test, and verify scripts.
+- Implemented a transport-agnostic AHP server core with in-memory session storage and explicit `AgentProvider` plugin wiring.
+- Implemented the minimum AHP TypeScript-client-compatible surface: `initialize`, `ping`, snapshot `reconnect`, `subscribe`, `unsubscribe`, `listSessions`, `resolveSessionConfig`, `createSession`, `disposeSession`, `fetchTurns`, `completions`, and `dispatchAction`.
+- Added a Codex App Server adapter boundary and socket client. CAS uses WebSocket text frames over a Unix socket and JSON-RPC-lite without `jsonrpc: "2.0"`; the adapter initializes CAS, starts a CAS thread per AHP session, maps AHP user turns to `turn/start`, and maps CAS text/completion notifications to AHP `session/responsePart`, `session/delta`, and `session/turnComplete` actions.
+- Added NATS server/client transport adapters and initial subject convention: `<namespace>.server.<serverId>.client.<clientId>.to-server` and `.to-client`.
+- Added tests against the published Microsoft AHP TypeScript client, a fake CAS client, and a fake NATS broker.
+- `npm run verify` passed after implementation.
+- Created local commits through `92d47b5 chore: simplify NATS transport publish path`; branch was ahead of origin and not pushed.
