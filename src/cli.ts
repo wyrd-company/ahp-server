@@ -18,6 +18,10 @@ try {
     natsUrl: config.natsUrl,
     subjects,
     storageDirectory: config.storageDirectory,
+    providers: [
+      ...(config.codexAppServerSocket || config.codexAppServerUrl ? ['codex'] : []),
+      ...(config.piAgentBaseUrl ? ['pi-agent'] : []),
+    ],
   }));
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {

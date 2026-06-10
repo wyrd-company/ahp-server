@@ -13,6 +13,9 @@ test('reads server process configuration from environment', () => {
     AHP_STORAGE_DIR: 'relative-storage',
     AHP_DEFAULT_DIRECTORY: '/workspaces/example',
     CODEX_DEFAULT_MODEL: 'gpt-test',
+    PI_AGENT_BASE_URL: 'https://pi.example/v1',
+    PI_AGENT_API_KEY: 'pi-key',
+    PI_AGENT_MODEL: 'pi-model',
   });
 
   assert.equal(config.natsUrl, 'nats://127.0.0.1:4222');
@@ -23,15 +26,26 @@ test('reads server process configuration from environment', () => {
   assert.ok(config.storageDirectory.endsWith('/relative-storage'));
   assert.equal(config.defaultDirectory, 'file:///workspaces/example');
   assert.equal(config.codexDefaultModel, 'gpt-test');
+  assert.equal(config.piAgentBaseUrl, 'https://pi.example/v1');
+  assert.equal(config.piAgentApiKey, 'pi-key');
+  assert.equal(config.piAgentModel, 'pi-model');
 });
 
-test('requires NATS and a Codex App Server endpoint', () => {
+test('requires NATS and at least one provider', () => {
   assert.throws(
     () => readServerProcessConfig({ CODEX_APP_SERVER_SOCKET: '/tmp/codex.sock' }),
     /NATS_URL is required/,
   );
   assert.throws(
     () => readServerProcessConfig({ NATS_URL: 'nats://127.0.0.1:4222' }),
-    /CODEX_APP_SERVER_SOCKET or CODEX_APP_SERVER_URL is required/,
+    /configure at least one provider/,
+  );
+  assert.throws(
+    () => readServerProcessConfig({
+      NATS_URL: 'nats://127.0.0.1:4222',
+      PI_AGENT_BASE_URL: 'https://pi.example/v1',
+      PI_AGENT_API_KEY: 'pi-key',
+    }),
+    /PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL are required/,
   );
 });

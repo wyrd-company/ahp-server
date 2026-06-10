@@ -11,6 +11,9 @@ export interface ServerProcessConfig {
   readonly codexAppServerSocket?: string;
   readonly codexAppServerUrl?: string;
   readonly codexDefaultModel: string;
+  readonly piAgentBaseUrl?: string;
+  readonly piAgentApiKey?: string;
+  readonly piAgentModel?: string;
   readonly defaultDirectory?: URI;
 }
 
@@ -18,8 +21,16 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
   const natsUrl = requireEnv(env, 'NATS_URL');
   const codexAppServerSocket = optionalEnv(env, 'CODEX_APP_SERVER_SOCKET');
   const codexAppServerUrl = optionalEnv(env, 'CODEX_APP_SERVER_URL');
-  if (!codexAppServerSocket && !codexAppServerUrl) {
-    throw new Error('CODEX_APP_SERVER_SOCKET or CODEX_APP_SERVER_URL is required');
+  const piAgentBaseUrl = optionalEnv(env, 'PI_AGENT_BASE_URL');
+  const piAgentApiKey = optionalEnv(env, 'PI_AGENT_API_KEY');
+  const piAgentModel = optionalEnv(env, 'PI_AGENT_MODEL');
+  const codexConfigured = Boolean(codexAppServerSocket || codexAppServerUrl);
+  const piConfigured = Boolean(piAgentBaseUrl || piAgentApiKey || piAgentModel);
+  if (!codexConfigured && !piConfigured) {
+    throw new Error('configure at least one provider: Codex endpoint or PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL');
+  }
+  if (piConfigured && (!piAgentBaseUrl || !piAgentApiKey || !piAgentModel)) {
+    throw new Error('PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL are required when configuring Pi Agent');
   }
 
   return {
@@ -31,6 +42,9 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
     codexAppServerSocket,
     codexAppServerUrl,
     codexDefaultModel: optionalEnv(env, 'CODEX_E2E_MODEL') ?? optionalEnv(env, 'CODEX_DEFAULT_MODEL') ?? 'gpt-5.5',
+    piAgentBaseUrl,
+    piAgentApiKey,
+    piAgentModel,
     defaultDirectory: toFileUri(optionalEnv(env, 'AHP_DEFAULT_DIRECTORY')),
   };
 }

@@ -5,6 +5,7 @@ import { FileSystemSessionStore } from '../store.js';
 import { createCodexAppServerProvider } from '../codex-app-server/provider.js';
 import { NatsServerTransport } from '../nats/transport.js';
 import { ahpNatsSubjects } from '../nats/subjects.js';
+import { createPiAgentProvider } from '../pi-agent/provider.js';
 import type { ServerProcessConfig } from './config.js';
 
 export interface RunningServerProcess {
@@ -20,17 +21,27 @@ export async function startServerProcess(config: ServerProcessConfig): Promise<R
     serverId: config.serverId,
     clientId: config.clientId,
   });
-  const provider = createCodexAppServerProvider({
-    socketPath: config.codexAppServerSocket,
-    webSocketUrl: config.codexAppServerUrl,
-    defaultModel: config.codexDefaultModel,
-  });
+  const providers = [];
+  if (config.codexAppServerSocket || config.codexAppServerUrl) {
+    providers.push(createCodexAppServerProvider({
+      socketPath: config.codexAppServerSocket,
+      webSocketUrl: config.codexAppServerUrl,
+      defaultModel: config.codexDefaultModel,
+    }));
+  }
+  if (config.piAgentBaseUrl && config.piAgentApiKey && config.piAgentModel) {
+    providers.push(createPiAgentProvider({
+      baseUrl: config.piAgentBaseUrl,
+      apiKey: config.piAgentApiKey,
+      defaultModel: config.piAgentModel,
+    }));
+  }
   const server = new AhpServer({
     store: new FileSystemSessionStore({
       directory: config.storageDirectory,
-      agents: [provider.agent],
+      agents: providers.map(provider => provider.agent),
     }),
-    providers: [provider],
+    providers,
     defaultDirectory: config.defaultDirectory,
   });
   const transport = new NatsServerTransport({

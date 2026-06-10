@@ -30,3 +30,8 @@ tasks:
     desc: Run the live packaged server-process validation
     cmds:
       - scripts/validate-live-server-process.sh
+
+  live:pi:
+    desc: Run live Pi Agent adapter and packaged process validation
+    cmds:
+      - scripts/validate-live-pi-agent.sh

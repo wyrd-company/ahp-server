@@ -45,6 +45,7 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "test": "node --test --import tsx test/*.test.ts",
+    "test:live:pi": "scripts/validate-live-pi-agent.sh",
     "test:live:process": "scripts/validate-live-server-process.sh",
     "test:live:vertical": "scripts/validate-live-vertical.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",

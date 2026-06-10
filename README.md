@@ -14,6 +14,7 @@ This repository currently contains the first vertical-slice implementation:
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
+- A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
 - NATS transport adapters for both the server side and the TypeScript AHP client side.
 - Gated live integration tests for real NATS, real CAS, and the combined NATS -> AHP -> CAS -> NATS path.
 
@@ -93,7 +94,7 @@ The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token 
 
 ### Packaged Process
 
-The package exposes an `ahp-server` executable. The current process slice wires one NATS route, one filesystem store, and the Codex App Server adapter:
+The package exposes an `ahp-server` executable. The current process slice wires one NATS route, one filesystem store, and explicitly configured adapters.
 
 ```bash
 NATS_URL=nats://nats:4222 \
@@ -105,10 +106,23 @@ AHP_CLIENT_ID=client-1 \
 ahp-server
 ```
 
+For Pi Agent / OpenAI-compatible Chat Completions:
+
+```bash
+NATS_URL=nats://nats:4222 \
+PI_AGENT_BASE_URL=https://provider.example/v1 \
+PI_AGENT_API_KEY=... \
+PI_AGENT_MODEL=... \
+AHP_STORAGE_DIR=/workspace-storage/ahp-server \
+ahp-server
+```
+
 Configuration:
 
 - `NATS_URL` is required.
-- `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL` is required.
+- Configure at least one provider:
+  - Codex: `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL`.
+  - Pi Agent: `PI_AGENT_BASE_URL`, `PI_AGENT_API_KEY`, and `PI_AGENT_MODEL`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp`.
 - `AHP_SERVER_ID` defaults to `server`.
@@ -125,6 +139,7 @@ import {
   AhpServer,
   FileSystemSessionStore,
   createCodexAppServerProvider,
+  createPiAgentProvider,
   createNatsServerTransport,
   ahpNatsSubjects,
 } from '@wyrd-company/ahp-server';
@@ -141,6 +156,11 @@ const server = new AhpServer({
   providers: [
     createCodexAppServerProvider({
       socketPath: '/path/to/codex-app-server.sock',
+    }),
+    createPiAgentProvider({
+      baseUrl: 'https://provider.example/v1',
+      apiKey: process.env.PI_AGENT_API_KEY!,
+      defaultModel: 'provider-model-id',
     }),
   ],
 });
@@ -159,6 +179,7 @@ npm install
 npm run verify
 task live:vertical
 task live:process
+task live:pi
 ```
 
 `npm run verify` runs:
@@ -176,6 +197,15 @@ task live:vertical
 
 # Validate the packaged server process against Docker NATS and CAS over Unix socket.
 task live:process
+
+# Validate the Pi Agent adapter and packaged server process.
+# The task loads .env from this repository root when present.
+task live:pi
+
+# .env example for Pi Agent live validation:
+PI_AGENT_BASE_URL=https://provider.example/v1
+PI_AGENT_API_KEY=...
+PI_AGENT_MODEL=...
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
@@ -220,12 +250,12 @@ NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-ser
 - VS Code reference AHP server: `/workspaces/references/vscode/src/vs/platform/agentHost/node`
 - Codex App Server protocol: `/workspaces/references/codex/codex-rs/app-server-protocol`
 - Codex App Server Rust client: `/workspaces/references/codex/codex-rs/app-server-client`
+- Pi Agent harness: `/workspaces/references/pi`
 - NATS TypeScript SDK: `/workspaces/references/nats.js`
 
 ## Planned Follow-Up
 
-- Durable filesystem-backed session/event storage.
 - Extract adapter packages into sibling repos if that remains the preferred package layout.
-- Pi Agent adapter.
+- Full Pi coding-agent runtime/RPC adapter if OpenAI-compatible chat completion is not enough for the desired workflow.
 - Claude Agent SDK and Cursor SDK risk spikes.
 - A2A adapter where one A2A task maps to one AHP session.
