@@ -78,6 +78,18 @@ Session output is streamed as AHP `action` notifications using:
 
 Root session catalogue notifications are emitted for session add/remove/summary changes.
 
+## Active-Client Tools
+
+The server supports active-client tools as a provider-agnostic capability:
+
+- `createSession.activeClient` seeds the provider session with the current active-client tool set.
+- `session/activeClientToolsChanged` updates the provider session through the optional `AgentSession.setActiveClientTools` hook.
+- Clearing the active client, disposing the session, or disconnecting the active client removes those tools from the provider session.
+- Providers report active-client tool invocations through `AgentSessionContext.activeClientToolSink.reportInvocation`.
+- The server emits `session/toolCallStart` and `session/toolCallReady` with `contributor: { kind: "client", clientId }`.
+- The server owns trusted correlation for session URI, turn id, tool call id, tool name, and owning client id. Tool input is not trusted for those fields.
+- `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
+
 ## Codex App Server Adapter
 
 CAS uses WebSocket text frames over a Unix domain socket. Its protocol is JSON-RPC-like but intentionally omits `jsonrpc: "2.0"`.

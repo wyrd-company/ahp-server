@@ -5,9 +5,11 @@ import type {
   ModelSelection,
   RootState,
   SessionConfigSchema,
+  StringOrMarkdown,
   SessionState,
   SessionSummary,
   StateAction,
+  ToolDefinition,
   URI,
 } from '@microsoft/agent-host-protocol';
 
@@ -50,6 +52,25 @@ export interface AgentTurnSink {
   fail(error: Error): void;
 }
 
+export interface ActiveClientTools {
+  readonly clientId: string;
+  readonly tools: readonly ToolDefinition[];
+}
+
+export interface ActiveClientToolInvocation {
+  readonly turnId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly displayName?: string;
+  readonly invocationMessage?: StringOrMarkdown;
+  readonly toolInput?: string;
+  readonly _meta?: Record<string, unknown>;
+}
+
+export interface ActiveClientToolSink {
+  reportInvocation(invocation: ActiveClientToolInvocation): void;
+}
+
 export interface AgentSessionContext {
   readonly sessionUri: URI;
   readonly providerId: string;
@@ -57,10 +78,13 @@ export interface AgentSessionContext {
   readonly model?: ModelSelection;
   readonly config?: Record<string, unknown>;
   readonly activeClientId?: string;
+  readonly activeClientTools?: ActiveClientTools;
+  readonly activeClientToolSink: ActiveClientToolSink;
 }
 
 export interface AgentSession {
   sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void>;
+  setActiveClientTools?(activeClientTools: ActiveClientTools | undefined): Promise<void> | void;
   cancel?(reason?: string): Promise<void> | void;
   dispose?(): Promise<void> | void;
 }

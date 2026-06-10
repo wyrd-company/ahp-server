@@ -28,6 +28,7 @@ import {
   type SessionSummary,
   type Snapshot,
   type StateAction,
+  type ToolDefinition,
   type SubscribeParams,
   type SubscribeResult,
   type URI,
@@ -37,6 +38,7 @@ import { AhpServerError, JsonRpcErrorCodes, toJsonRpcError } from './errors.js';
 import { FileResourceService } from './resources.js';
 import { InMemorySessionStore } from './store.js';
 import type {
+  ActiveClientToolInvocation,
   AgentProvider,
   AgentTurnSink,
   AhpServerOptions,
@@ -68,7 +70,22 @@ const ACTION = {
   SessionError: 'session/error',
   SessionResponsePart: 'session/responsePart',
   SessionTurnComplete: 'session/turnComplete',
+  SessionActiveClientChanged: 'session/activeClientChanged',
+  SessionActiveClientToolsChanged: 'session/activeClientToolsChanged',
+  SessionToolCallStart: 'session/toolCallStart',
+  SessionToolCallReady: 'session/toolCallReady',
+  SessionToolCallComplete: 'session/toolCallComplete',
+  SessionToolCallContentChanged: 'session/toolCallContentChanged',
+  SessionToolCallResultConfirmed: 'session/toolCallResultConfirmed',
 } as const;
+
+interface ActiveClientToolCallRecord {
+  readonly sessionUri: URI;
+  readonly turnId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly clientId: string;
+}
 
 export class AhpServer {
   private readonly providers = new Map<string, AgentProvider>();
@@ -76,6 +93,7 @@ export class AhpServer {
   private readonly supportedProtocolVersions: string[];
   private readonly resources: FileResourceService;
   private readonly connections = new Set<ClientConnection>();
+  private readonly activeClientToolCalls = new Map<string, ActiveClientToolCallRecord>();
   private serverSeq = 0;
 
   constructor(private readonly options: AhpServerOptions) {
@@ -109,6 +127,7 @@ export class AhpServer {
         await this.handleMessage(connection, message);
       }
     } finally {
+      await this.clearActiveClientForConnection(connection);
       this.connections.delete(connection);
       await transport.close();
     }
@@ -271,6 +290,9 @@ export class AhpServer {
     if (!provider) {
       throw new AhpServerError(JsonRpcErrorCodes.ProviderNotFound, `provider not found: ${params.provider ?? '(default)'}`);
     }
+    if (params.activeClient && params.activeClient.clientId !== connection.clientId) {
+      throw new AhpServerError(JsonRpcErrorCodes.PermissionDenied, 'active client must match initialized client id');
+    }
 
     const now = Date.now();
     const state: SessionState = {
@@ -309,7 +331,14 @@ export class AhpServer {
         model: params.model,
         config: params.config,
         activeClientId: connection.clientId,
+        activeClientTools: activeClientToolsFromState(state),
+        activeClientToolSink: {
+          reportInvocation: invocation => {
+            this.reportActiveClientToolInvocation(params.channel, invocation);
+          },
+        },
       });
+      await this.syncActiveClientTools(stored);
       this.applySessionAction(params.channel, { type: ACTION.SessionReady } as StateAction);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -332,6 +361,7 @@ export class AhpServer {
     }
     session.abortController?.abort();
     await session.agentSession?.dispose?.();
+    this.deleteActiveClientToolCalls(params.channel);
     this.publishRootNotification('root/sessionRemoved', { channel: ROOT_URI, session: params.channel });
     this.publishRootAction({ type: ACTION.RootActiveSessionsChanged, activeSessions: this.store.listSessions().length } as StateAction);
     return null;
@@ -355,6 +385,10 @@ export class AhpServer {
     }
 
     const session = this.requireSession(params.channel);
+    if (!this.acceptClientSessionAction(connection, session, params.action)) {
+      return;
+    }
+
     this.applySessionAction(params.channel, params.action, origin);
 
     if (params.action.type === ACTION.SessionTurnStarted) {
@@ -364,6 +398,125 @@ export class AhpServer {
     } else if (params.action.type === ACTION.SessionTurnCancelled) {
       session.abortController?.abort(params.action.turnId);
       await session.agentSession?.cancel?.(params.action.turnId);
+    } else if (
+      params.action.type === ACTION.SessionActiveClientChanged ||
+      params.action.type === ACTION.SessionActiveClientToolsChanged
+    ) {
+      if (params.action.type === ACTION.SessionActiveClientChanged && !params.action.activeClient) {
+        this.deleteActiveClientToolCalls(params.channel);
+      }
+      await this.syncActiveClientTools(session);
+    } else if (
+      params.action.type === ACTION.SessionToolCallComplete &&
+      !params.action.requiresResultConfirmation
+    ) {
+      this.activeClientToolCalls.delete(activeClientToolCallKey(params.channel, params.action.toolCallId));
+    } else if (params.action.type === ACTION.SessionToolCallResultConfirmed) {
+      this.activeClientToolCalls.delete(activeClientToolCallKey(params.channel, params.action.toolCallId));
+    }
+  }
+
+  private acceptClientSessionAction(connection: ClientConnection, session: StoredSession, action: StateAction): boolean {
+    if (action.type === ACTION.SessionActiveClientChanged) {
+      const currentClientId = session.state.activeClient?.clientId;
+      const requestedClientId = action.activeClient?.clientId;
+      if (!connection.clientId) {
+        return false;
+      }
+      if (requestedClientId && requestedClientId !== connection.clientId) {
+        return false;
+      }
+      if (currentClientId && currentClientId !== connection.clientId) {
+        return false;
+      }
+      return true;
+    }
+
+    if (action.type === ACTION.SessionActiveClientToolsChanged) {
+      return Boolean(connection.clientId && session.state.activeClient?.clientId === connection.clientId);
+    }
+
+    if (isClientToolResultAction(action)) {
+      const record = this.activeClientToolCalls.get(activeClientToolCallKey(session.uri, action.toolCallId));
+      if (!record) {
+        if (clientContributorFromSessionState(session.state, action.toolCallId)) {
+          return false;
+        }
+        return true;
+      }
+      return connection.clientId === record.clientId && session.state.activeClient?.clientId === record.clientId;
+    }
+
+    return true;
+  }
+
+  private async syncActiveClientTools(session: StoredSession): Promise<void> {
+    await session.agentSession?.setActiveClientTools?.(activeClientToolsFromState(session.state));
+  }
+
+  private reportActiveClientToolInvocation(sessionUri: URI, invocation: ActiveClientToolInvocation): void {
+    const session = this.store.getSession(sessionUri);
+    const activeClient = session?.state.activeClient;
+    if (!session || !activeClient) {
+      return;
+    }
+    const tool = activeClient.tools.find(candidate => candidate.name === invocation.toolName);
+    if (!tool) {
+      return;
+    }
+
+    this.activeClientToolCalls.set(activeClientToolCallKey(sessionUri, invocation.toolCallId), {
+      sessionUri,
+      turnId: invocation.turnId,
+      toolCallId: invocation.toolCallId,
+      toolName: invocation.toolName,
+      clientId: activeClient.clientId,
+    });
+
+    const displayName = invocation.displayName ?? tool.title ?? tool.name;
+    this.applySessionAction(sessionUri, {
+      type: ACTION.SessionToolCallStart,
+      turnId: invocation.turnId,
+      toolCallId: invocation.toolCallId,
+      toolName: invocation.toolName,
+      displayName,
+      contributor: { kind: 'client', clientId: activeClient.clientId },
+      ...(invocation._meta ? { _meta: invocation._meta } : {}),
+    } as StateAction);
+    this.applySessionAction(sessionUri, {
+      type: ACTION.SessionToolCallReady,
+      turnId: invocation.turnId,
+      toolCallId: invocation.toolCallId,
+      invocationMessage: invocation.invocationMessage ?? displayName,
+      ...(invocation.toolInput ? { toolInput: invocation.toolInput } : {}),
+      confirmed: 'not-needed',
+      ...(invocation._meta ? { _meta: invocation._meta } : {}),
+    } as StateAction);
+  }
+
+  private async clearActiveClientForConnection(connection: ClientConnection): Promise<void> {
+    if (!connection.clientId) {
+      return;
+    }
+    for (const summary of this.store.listSessions()) {
+      const session = this.store.getSession(summary.resource);
+      if (!session || session.state.activeClient?.clientId !== connection.clientId) {
+        continue;
+      }
+      this.applySessionAction(session.uri, {
+        type: ACTION.SessionActiveClientChanged,
+        activeClient: null,
+      } as StateAction);
+      this.deleteActiveClientToolCalls(session.uri);
+      await this.syncActiveClientTools(session);
+    }
+  }
+
+  private deleteActiveClientToolCalls(sessionUri: URI): void {
+    for (const [key, record] of this.activeClientToolCalls.entries()) {
+      if (record.sessionUri === sessionUri) {
+        this.activeClientToolCalls.delete(key);
+      }
     }
   }
 
@@ -492,6 +645,60 @@ export class AhpServer {
   private isResponse(message: JsonRpcMessage): message is JsonRpcResponse {
     return 'id' in message && ('result' in message || 'error' in message) && !('method' in message);
   }
+}
+
+function activeClientToolsFromState(state: SessionState): { clientId: string; tools: readonly ToolDefinition[] } | undefined {
+  return state.activeClient
+    ? { clientId: state.activeClient.clientId, tools: state.activeClient.tools }
+    : undefined;
+}
+
+function isClientToolResultAction(action: StateAction): action is StateAction & { toolCallId: string } {
+  return action.type === ACTION.SessionToolCallComplete ||
+    action.type === ACTION.SessionToolCallContentChanged ||
+    action.type === ACTION.SessionToolCallResultConfirmed;
+}
+
+function activeClientToolCallKey(sessionUri: URI, toolCallId: string): string {
+  return `${sessionUri}\u0000${toolCallId}`;
+}
+
+function clientContributorFromSessionState(state: SessionState, toolCallId: string): string | undefined {
+  for (const part of responsePartsFromSessionState(state)) {
+    if (!isRecord(part) || part.kind !== 'toolCall' || !isRecord(part.toolCall)) {
+      continue;
+    }
+    const toolCall = part.toolCall;
+    if (toolCall.toolCallId !== toolCallId || !isRecord(toolCall.contributor)) {
+      continue;
+    }
+    const contributor = toolCall.contributor;
+    if (contributor.kind === 'client' && typeof contributor.clientId === 'string') {
+      return contributor.clientId;
+    }
+  }
+  return undefined;
+}
+
+function responsePartsFromSessionState(state: SessionState): unknown[] {
+  const parts: unknown[] = [];
+  const stateRecord = state as unknown as Record<string, unknown>;
+  const activeTurn = stateRecord.activeTurn;
+  if (isRecord(activeTurn) && Array.isArray(activeTurn.responseParts)) {
+    parts.push(...activeTurn.responseParts);
+  }
+  if (Array.isArray(stateRecord.turns)) {
+    for (const turn of stateRecord.turns) {
+      if (isRecord(turn) && Array.isArray(turn.responseParts)) {
+        parts.push(...turn.responseParts);
+      }
+    }
+  }
+  return parts;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 export function textMessage(text: string): Message {

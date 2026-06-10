@@ -21,6 +21,9 @@ export {
 export { readServerProcessConfig, startServerProcess } from './process/index.js';
 export { createPiAgentProvider, OpenAICompatiblePiAgentClient } from './pi-agent/index.js';
 export type {
+  ActiveClientToolInvocation,
+  ActiveClientTools,
+  ActiveClientToolSink,
   AgentProvider,
   AgentSession,
   AgentSessionContext,
