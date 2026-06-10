@@ -9,6 +9,7 @@ import type {
   SessionState,
   SessionSummary,
   StateAction,
+  ToolCallResult,
   ToolDefinition,
   URI,
 } from '@microsoft/agent-host-protocol';
@@ -68,7 +69,7 @@ export interface ActiveClientToolInvocation {
 }
 
 export interface ActiveClientToolSink {
-  reportInvocation(invocation: ActiveClientToolInvocation): void;
+  reportInvocation(invocation: ActiveClientToolInvocation): Promise<ToolCallResult>;
 }
 
 export interface AgentSessionContext {

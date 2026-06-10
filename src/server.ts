@@ -28,6 +28,7 @@ import {
   type SessionSummary,
   type Snapshot,
   type StateAction,
+  type ToolCallResult,
   type ToolDefinition,
   type SubscribeParams,
   type SubscribeResult,
@@ -85,6 +86,8 @@ interface ActiveClientToolCallRecord {
   readonly toolCallId: string;
   readonly toolName: string;
   readonly clientId: string;
+  readonly resolve: (result: ToolCallResult) => void;
+  readonly reject: (error: Error) => void;
 }
 
 export class AhpServer {
@@ -334,7 +337,7 @@ export class AhpServer {
         activeClientTools: activeClientToolsFromState(state),
         activeClientToolSink: {
           reportInvocation: invocation => {
-            this.reportActiveClientToolInvocation(params.channel, invocation);
+            return this.reportActiveClientToolInvocation(params.channel, invocation);
           },
         },
       });
@@ -392,9 +395,9 @@ export class AhpServer {
     this.applySessionAction(params.channel, params.action, origin);
 
     if (params.action.type === ACTION.SessionTurnStarted) {
-      await this.startAgentTurn(session, params.action.turnId, params.action.message);
+      this.queueAgentTurn(session, params.action.turnId, params.action.message);
     } else if (params.action.type === ACTION.SessionPendingMessageSet) {
-      await this.startAgentTurn(session, params.action.id, params.action.message);
+      this.queueAgentTurn(session, params.action.id, params.action.message);
     } else if (params.action.type === ACTION.SessionTurnCancelled) {
       session.abortController?.abort(params.action.turnId);
       await session.agentSession?.cancel?.(params.action.turnId);
@@ -410,7 +413,7 @@ export class AhpServer {
       params.action.type === ACTION.SessionToolCallComplete &&
       !params.action.requiresResultConfirmation
     ) {
-      this.activeClientToolCalls.delete(activeClientToolCallKey(params.channel, params.action.toolCallId));
+      this.completeActiveClientToolCall(params.channel, params.action.toolCallId, params.action.result);
     } else if (params.action.type === ACTION.SessionToolCallResultConfirmed) {
       this.activeClientToolCalls.delete(activeClientToolCallKey(params.channel, params.action.toolCallId));
     }
@@ -454,23 +457,27 @@ export class AhpServer {
     await session.agentSession?.setActiveClientTools?.(activeClientToolsFromState(session.state));
   }
 
-  private reportActiveClientToolInvocation(sessionUri: URI, invocation: ActiveClientToolInvocation): void {
+  private reportActiveClientToolInvocation(sessionUri: URI, invocation: ActiveClientToolInvocation): Promise<ToolCallResult> {
     const session = this.store.getSession(sessionUri);
     const activeClient = session?.state.activeClient;
     if (!session || !activeClient) {
-      return;
+      throw new Error(`session has no active client: ${sessionUri}`);
     }
     const tool = activeClient.tools.find(candidate => candidate.name === invocation.toolName);
     if (!tool) {
-      return;
+      throw new Error(`active client tool not found: ${invocation.toolName}`);
     }
 
-    this.activeClientToolCalls.set(activeClientToolCallKey(sessionUri, invocation.toolCallId), {
-      sessionUri,
-      turnId: invocation.turnId,
-      toolCallId: invocation.toolCallId,
-      toolName: invocation.toolName,
-      clientId: activeClient.clientId,
+    const completion = new Promise<ToolCallResult>((resolve, reject) => {
+      this.activeClientToolCalls.set(activeClientToolCallKey(sessionUri, invocation.toolCallId), {
+        sessionUri,
+        turnId: invocation.turnId,
+        toolCallId: invocation.toolCallId,
+        toolName: invocation.toolName,
+        clientId: activeClient.clientId,
+        resolve,
+        reject,
+      });
     });
 
     const displayName = invocation.displayName ?? tool.title ?? tool.name;
@@ -492,6 +499,7 @@ export class AhpServer {
       confirmed: 'not-needed',
       ...(invocation._meta ? { _meta: invocation._meta } : {}),
     } as StateAction);
+    return completion;
   }
 
   private async clearActiveClientForConnection(connection: ClientConnection): Promise<void> {
@@ -516,8 +524,23 @@ export class AhpServer {
     for (const [key, record] of this.activeClientToolCalls.entries()) {
       if (record.sessionUri === sessionUri) {
         this.activeClientToolCalls.delete(key);
+        record.reject(new Error(`active client tool call cancelled for session ${sessionUri}`));
       }
     }
+  }
+
+  private completeActiveClientToolCall(sessionUri: URI, toolCallId: string, result: ToolCallResult): void {
+    const key = activeClientToolCallKey(sessionUri, toolCallId);
+    const record = this.activeClientToolCalls.get(key);
+    if (!record) {
+      return;
+    }
+    this.activeClientToolCalls.delete(key);
+    record.resolve(result);
+  }
+
+  private queueAgentTurn(session: StoredSession, turnId: string, message: Message): void {
+    void this.startAgentTurn(session, turnId, message);
   }
 
   private async startAgentTurn(session: StoredSession, turnId: string, message: Message): Promise<void> {

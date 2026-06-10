@@ -3,7 +3,9 @@ import { after, test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
 import type { AhpTransport, JsonRpcMessage, TransportFrame } from '@microsoft/agent-host-protocol/client';
-import type { Message, StateAction } from '@microsoft/agent-host-protocol';
+import type { Message, StateAction, ToolDefinition } from '@microsoft/agent-host-protocol';
+import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 import {
   AhpServer,
@@ -66,6 +68,99 @@ test('Claude Agent SDK provider streams SDK messages as AHP actions', async () =
     'Claude says hello',
   );
 
+  await client.request('disposeSession', { channel: sessionUri });
+  await client.shutdown();
+});
+
+test('Claude Agent SDK provider exposes active-client tools through Streamable HTTP MCP', async () => {
+  const releaseClaudeResult = deferred<void>();
+  const claude = new FakeClaudeAgentSdkClient([resultSuccess()], releaseClaudeResult.promise);
+  const server = new AhpServer({
+    providers: [createClaudeAgentSdkProvider({ client: claude, defaultModel: 'claude-test' })],
+  });
+  const [clientTransport, serverTransport] = createInMemoryTransportPair();
+  runningServers.push(server.accept(serverTransport));
+
+  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  client.connect();
+  await client.initialize({ clientId: 'owner-client', protocolVersions: ['0.3.0'] });
+
+  const tool = toolDefinition('searchWorkspace', 'Search Workspace');
+  const sessionUri = 'ahp-session:/claude-active-client-tools';
+  await client.request('createSession', {
+    channel: sessionUri,
+    provider: 'claude-agent-sdk',
+    activeClient: {
+      clientId: 'owner-client',
+      displayName: 'Owner Client',
+      tools: [tool],
+    },
+  });
+  const { subscription } = await client.subscribe(sessionUri);
+
+  client.dispatch(sessionUri, {
+    type: 'session/turnStarted',
+    turnId: 'ahp-turn-tools',
+    message: userMessage('Use the MCP client tool'),
+  } as StateAction);
+
+  await waitFor(() => claude.options.length === 1 && claude.prompts.length === 1);
+  const mcpServerConfig = claude.options[0]?.mcpServers?.activeClientTools;
+  assert.equal(mcpServerConfig?.type, 'http');
+  assert.ok(mcpServerConfig.url);
+
+  const mcpClient = new McpClient({ name: 'ahp-server-test', version: '0.1.0' });
+  const mcpTransport = new StreamableHTTPClientTransport(new URL(mcpServerConfig.url));
+  await mcpClient.connect(mcpTransport);
+
+  const tools = await mcpClient.listTools();
+  assert.deepEqual(tools.tools.map(candidate => candidate.name), ['searchWorkspace']);
+  assert.deepEqual(tools.tools[0]?.inputSchema, tool.inputSchema);
+
+  const call = mcpClient.callTool({
+    name: 'searchWorkspace',
+    arguments: {
+      sessionUri: 'ahp-session:/forged',
+      turnId: 'forged-turn',
+      query: 'needle',
+    },
+  });
+
+  const toolActions = await collectUntilAction(subscription, action => action.type === 'session/toolCallReady');
+  const toolStart = toolActions.find(action => action.type === 'session/toolCallStart');
+  assert.ok(toolStart);
+  assert.equal(toolStart.turnId, 'ahp-turn-tools');
+  assert.equal(toolStart.toolName, 'searchWorkspace');
+  assert.deepEqual(toolStart.contributor, {
+    kind: 'client',
+    clientId: 'owner-client',
+  });
+
+  const toolReady = toolActions.at(-1);
+  assert.equal(toolReady?.type, 'session/toolCallReady');
+  assert.equal(toolReady.turnId, 'ahp-turn-tools');
+  assert.match(String(toolReady.toolInput), /forged-turn/);
+  assert.match(String(toolReady.toolInput), /needle/);
+
+  client.dispatch(sessionUri, {
+    type: 'session/toolCallComplete',
+    turnId: 'ahp-turn-tools',
+    toolCallId: toolReady.toolCallId,
+    result: {
+      success: true,
+      pastTenseMessage: 'Searched workspace',
+      content: [{ type: 'text', text: 'found needle' }],
+    },
+  } as StateAction);
+
+  const result = await call;
+  assert.equal(result.isError, false);
+  assert.deepEqual(result.content, [{ type: 'text', text: 'found needle' }]);
+
+  releaseClaudeResult.resolve();
+  await collectUntilTerminal(subscription);
+  await mcpClient.close();
+  await client.request('disposeSession', { channel: sessionUri });
   await client.shutdown();
 });
 
@@ -73,11 +168,14 @@ class FakeClaudeAgentSdkClient implements ClaudeAgentSdkClient {
   readonly prompts: string[] = [];
   readonly options: Array<ClaudeAgentSdkQueryParams['options']> = [];
 
-  constructor(private readonly messages: readonly ClaudeAgentSdkMessage[]) {}
+  constructor(
+    private readonly messages: readonly ClaudeAgentSdkMessage[],
+    private readonly beforeMessages: Promise<void> = Promise.resolve(),
+  ) {}
 
   createQuery(params: ClaudeAgentSdkQueryParams): ClaudeAgentSdkQuery {
     this.options.push(params.options);
-    return new FakeClaudeAgentSdkQuery(params.prompt, this.messages, this.prompts);
+    return new FakeClaudeAgentSdkQuery(params.prompt, this.messages, this.prompts, this.beforeMessages);
   }
 }
 
@@ -88,8 +186,9 @@ class FakeClaudeAgentSdkQuery implements AsyncGenerator<ClaudeAgentSdkMessage, v
     prompt: string | AsyncIterable<ClaudeAgentSdkUserMessage>,
     messages: readonly ClaudeAgentSdkMessage[],
     prompts: string[],
+    beforeMessages: Promise<void>,
   ) {
-    this.iterator = this.run(prompt, messages, prompts);
+    this.iterator = this.run(prompt, messages, prompts, beforeMessages);
   }
 
   [Symbol.asyncIterator](): AsyncGenerator<ClaudeAgentSdkMessage, void> {
@@ -140,6 +239,7 @@ class FakeClaudeAgentSdkQuery implements AsyncGenerator<ClaudeAgentSdkMessage, v
     prompt: string | AsyncIterable<ClaudeAgentSdkUserMessage>,
     messages: readonly ClaudeAgentSdkMessage[],
     prompts: string[],
+    beforeMessages: Promise<void>,
   ): AsyncGenerator<ClaudeAgentSdkMessage, void> {
     if (typeof prompt === 'string') {
       prompts.push(prompt);
@@ -150,10 +250,32 @@ class FakeClaudeAgentSdkQuery implements AsyncGenerator<ClaudeAgentSdkMessage, v
         prompts.push(typeof message.content === 'string' ? message.content : JSON.stringify(message.content));
       }
     }
+    await beforeMessages;
     for (const message of messages) {
       yield message;
     }
   }
+}
+
+async function collectUntilAction(
+  subscription: AsyncIterator<unknown>,
+  predicate: (action: StateAction) => boolean,
+): Promise<StateAction[]> {
+  const actions: StateAction[] = [];
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const next = await subscription.next();
+    assert.equal(next.done, false);
+    const value = next.value as { type?: string; params?: { action?: StateAction } };
+    if (value.type !== 'action' || !value.params?.action) {
+      continue;
+    }
+    actions.push(value.params.action);
+    if (predicate(value.params.action)) {
+      return actions;
+    }
+  }
+  assert.fail(`timed out waiting for matching action; saw: ${JSON.stringify(actions)}`);
 }
 
 async function collectUntilTerminal(subscription: AsyncIterator<unknown>): Promise<StateAction[]> {
@@ -217,6 +339,42 @@ function userMessage(text: string): Message {
     text,
     origin: { kind: 'user' as Message['origin']['kind'] },
   };
+}
+
+function toolDefinition(name: string, title: string): ToolDefinition {
+  return {
+    name,
+    title,
+    description: `${title} test tool`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+      },
+      required: ['query'],
+    },
+  };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(predicate(), true);
 }
 
 function asAhpTransport(transport: {

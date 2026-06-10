@@ -12,8 +12,10 @@ import type {
   AgentProvider,
   AgentSession,
   AgentSessionContext,
+  ActiveClientTools,
   AgentTurnSink,
 } from '../types.js';
+import { ActiveClientToolsMcpBridge } from '../mcp/active-client-tools.js';
 import {
   AnthropicClaudeAgentSdkClient,
   type ClaudeAgentSdkClient,
@@ -35,6 +37,7 @@ export interface ClaudeAgentSdkProviderOptions {
   readonly allowedTools?: readonly string[];
   readonly disallowedTools?: readonly string[];
   readonly tools?: ClaudeAgentSdkOptions['tools'];
+  readonly mcpServers?: ClaudeAgentSdkOptions['mcpServers'];
   readonly env?: ClaudeAgentSdkOptions['env'];
 }
 
@@ -59,6 +62,11 @@ export function createClaudeAgentSdkProvider(options: ClaudeAgentSdkProviderOpti
     createSession(context: AgentSessionContext): AgentSession {
       const client = options.client ?? options.clientFactory?.() ?? new AnthropicClaudeAgentSdkClient();
       const cwd = context.workingDirectory ? uriToPath(context.workingDirectory) : process.cwd();
+      const activeClientToolsMcpBridge = new ActiveClientToolsMcpBridge({
+        name: `${providerId}-active-client-tools`,
+        sink: context.activeClientToolSink,
+      });
+      activeClientToolsMcpBridge.setActiveClientTools(context.activeClientTools);
       return new ClaudeAgentSdkAHPAgentSession(client, {
         cwd,
         model: modelId(context.model, options.defaultModel),
@@ -67,7 +75,9 @@ export function createClaudeAgentSdkProvider(options: ClaudeAgentSdkProviderOpti
         allowedTools: options.allowedTools,
         disallowedTools: options.disallowedTools,
         tools: options.tools,
+        mcpServers: options.mcpServers,
         env: options.env,
+        activeClientToolsMcpBridge,
       });
     },
   };
@@ -81,7 +91,9 @@ interface ClaudeAgentSdkSessionOptions {
   readonly allowedTools?: readonly string[];
   readonly disallowedTools?: readonly string[];
   readonly tools?: ClaudeAgentSdkOptions['tools'];
+  readonly mcpServers?: ClaudeAgentSdkOptions['mcpServers'];
   readonly env?: ClaudeAgentSdkOptions['env'];
+  readonly activeClientToolsMcpBridge: ActiveClientToolsMcpBridge;
 }
 
 class ClaudeAgentSdkAHPAgentSession implements AgentSession {
@@ -98,7 +110,7 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
   async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
     const ahpTurnId = turnId ?? `turn-${Date.now()}`;
     const partId = `${ahpTurnId}:markdown`;
-    const query = this.ensureQuery();
+    const query = await this.ensureQuery();
     let partEmitted = false;
     let emittedStreamingDelta = false;
     let emittedAnyText = false;
@@ -124,6 +136,7 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
       void query.interrupt().catch(() => undefined);
     };
     signal.addEventListener('abort', interrupt, { once: true });
+    this.options.activeClientToolsMcpBridge.setCurrentTurn(ahpTurnId);
 
     try {
       this.input.push(userMessage(message.text));
@@ -177,24 +190,37 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
         }
       }
     } finally {
+      this.options.activeClientToolsMcpBridge.setCurrentTurn(undefined);
       signal.removeEventListener('abort', interrupt);
     }
+  }
+
+  setActiveClientTools(activeClientTools: ActiveClientTools | undefined): void {
+    this.options.activeClientToolsMcpBridge.setActiveClientTools(activeClientTools);
   }
 
   async cancel(): Promise<void> {
     await this.query?.interrupt().catch(() => undefined);
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.input.close();
     this.abortController.abort();
     this.query?.close();
+    await this.options.activeClientToolsMcpBridge.close();
   }
 
-  private ensureQuery(): ClaudeAgentSdkQuery {
+  private async ensureQuery(): Promise<ClaudeAgentSdkQuery> {
     if (this.query) {
       return this.query;
     }
+
+    await this.options.activeClientToolsMcpBridge.start();
+    const activeClientToolsMcpServer = {
+      type: 'http',
+      url: this.options.activeClientToolsMcpBridge.url,
+      alwaysLoad: true,
+    } as const;
 
     this.query = this.client.createQuery({
       prompt: this.input,
@@ -207,6 +233,10 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
         ...(this.options.allowedTools ? { allowedTools: [...this.options.allowedTools] } : {}),
         ...(this.options.disallowedTools ? { disallowedTools: [...this.options.disallowedTools] } : {}),
         ...(this.options.tools ? { tools: this.options.tools } : {}),
+        mcpServers: {
+          ...(this.options.mcpServers ?? {}),
+          activeClientTools: activeClientToolsMcpServer,
+        },
         ...(this.options.env ? { env: this.options.env } : {}),
         includePartialMessages: true,
       },

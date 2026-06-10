@@ -15,7 +15,7 @@ This repository currently contains the first vertical-slice implementation:
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
-- A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions.
+- A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions and exposes active-client tools through a local Streamable HTTP MCP bridge.
 - File-backed AHP `resource*` commands constrained to configured local roots.
 - Transport adapters provided by sibling packages, with TypeScript as the first implementation:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
@@ -87,8 +87,10 @@ The server supports active-client tools as a provider-agnostic capability:
 - Clearing the active client, disposing the session, or disconnecting the active client removes those tools from the provider session.
 - Providers report active-client tool invocations through `AgentSessionContext.activeClientToolSink.reportInvocation`.
 - The server emits `session/toolCallStart` and `session/toolCallReady` with `contributor: { kind: "client", clientId }`.
+- `reportInvocation` resolves with the owning client's `session/toolCallComplete` result so provider runtimes can return tool output to their native tool-call flow.
 - The server owns trusted correlation for session URI, turn id, tool call id, tool name, and owning client id. Tool input is not trusted for those fields.
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
+- The Claude Agent SDK provider registers those tools with Claude through a per-session local Streamable HTTP MCP server named `activeClientTools`.
 
 ## Codex App Server Adapter
 
