@@ -97,8 +97,9 @@ class CodexAHPAgentSession implements AgentSession {
     private readonly model: string,
   ) {}
 
-  async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal): Promise<void> {
-    let ahpTurnId = `turn-${Date.now()}`;
+  async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
+    const ahpTurnId = turnId ?? `turn-${Date.now()}`;
+    let codexTurnId: string | undefined;
     let markdownPartEmitted = false;
     let complete: (() => void) | undefined;
     let fail: ((error: Error) => void) | undefined;
@@ -118,12 +119,12 @@ class CodexAHPAgentSession implements AgentSession {
         }
         if (notification.method === 'turn/started') {
           const params = notification.params as { turn?: { id?: string } };
-          ahpTurnId = params.turn?.id ?? ahpTurnId;
+          codexTurnId = params.turn?.id ?? codexTurnId;
           return;
         }
         if (notification.method === 'item/agentMessage/delta') {
           const params = notification.params as { delta?: string; turnId?: string };
-          ahpTurnId = params.turnId ?? ahpTurnId;
+          codexTurnId = params.turnId ?? codexTurnId;
           if (!markdownPartEmitted) {
             markdownPartEmitted = true;
             sink.emit(markdownPart(ahpTurnId));
@@ -138,9 +139,10 @@ class CodexAHPAgentSession implements AgentSession {
         }
         if (notification.method === 'turn/completed') {
           const params = notification.params as { turn?: { id?: string } };
+          codexTurnId = params.turn?.id ?? codexTurnId;
           sink.emit({
             type: 'session/turnComplete',
-            turnId: params.turn?.id ?? ahpTurnId,
+            turnId: ahpTurnId,
           } as StateAction);
           complete?.();
           return;
@@ -160,9 +162,9 @@ class CodexAHPAgentSession implements AgentSession {
         input: [{ type: 'text', text: message.text, text_elements: [] }],
         model: this.model,
       });
-      ahpTurnId = response.turn.id;
+      codexTurnId = response.turn.id;
       if (signal.aborted) {
-        await this.cancel(ahpTurnId);
+        await this.cancel(codexTurnId);
         return;
       }
       await done;

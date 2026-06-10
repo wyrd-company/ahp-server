@@ -66,9 +66,12 @@ test('Codex provider maps an AHP turn to CAS thread and turn requests', async ()
     { type: 'text', text: 'Summarize the repo', text_elements: [] },
   ]);
   assert.equal(events[1]?.type, 'session/responsePart');
+  assert.equal((events[1] as { turnId?: string }).turnId, 'ahp-turn-1');
   assert.equal(events[2]?.type, 'session/delta');
+  assert.equal((events[2] as { turnId?: string }).turnId, 'ahp-turn-1');
   assert.equal((events[2] as { content?: string }).content, 'Codex says hello');
   assert.equal(events[3]?.type, 'session/turnComplete');
+  assert.equal((events[3] as { turnId?: string }).turnId, 'ahp-turn-1');
 
   await client.shutdown();
 });
@@ -164,4 +167,3 @@ function asAhpTransport(transport: {
     },
   };
 }
-

@@ -60,7 +60,7 @@ export interface AgentSessionContext {
 }
 
 export interface AgentSession {
-  sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal): Promise<void>;
+  sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void>;
   cancel?(reason?: string): Promise<void> | void;
   dispose?(): Promise<void> | void;
 }

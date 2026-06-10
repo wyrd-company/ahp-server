@@ -364,7 +364,7 @@ export class AhpServer {
     };
 
     try {
-      await session.agentSession.sendUserMessage(message, sink, abortController.signal);
+      await session.agentSession.sendUserMessage(message, sink, abortController.signal, turnId);
     } catch (error) {
       if (abortController.signal.aborted) {
         return;
