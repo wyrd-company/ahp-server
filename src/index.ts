@@ -2,6 +2,7 @@ export { AhpServer } from './server.js';
 export { FileSystemSessionStore, InMemorySessionStore } from './store.js';
 export { InMemoryServerTransport, createInMemoryTransportPair } from './transport/in-memory.js';
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
+export { createClaudeAgentSdkProvider, AnthropicClaudeAgentSdkClient } from './claude-agent-sdk/index.js';
 export {
   NatsAhpClientTransport,
   NatsServerTransport,
@@ -33,6 +34,15 @@ export type {
   CodexJsonRpcNotification,
   CodexServerRequestEvent,
 } from './codex-app-server/index.js';
+export type {
+  ClaudeAgentSdkClient,
+  ClaudeAgentSdkMessage,
+  ClaudeAgentSdkOptions,
+  ClaudeAgentSdkProviderOptions,
+  ClaudeAgentSdkQuery,
+  ClaudeAgentSdkQueryParams,
+  ClaudeAgentSdkUserMessage,
+} from './claude-agent-sdk/index.js';
 export type {
   AhpNatsSubjectOptions,
   AhpNatsSubjectPair,

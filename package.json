@@ -28,6 +28,10 @@
       "import": "./dist/src/codex-app-server/index.js",
       "types": "./dist/src/codex-app-server/index.d.ts"
     },
+    "./claude-agent-sdk": {
+      "import": "./dist/src/claude-agent-sdk/index.js",
+      "types": "./dist/src/claude-agent-sdk/index.d.ts"
+    },
     "./nats": {
       "import": "./dist/src/nats/index.js",
       "types": "./dist/src/nats/index.d.ts"
@@ -45,6 +49,7 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "test": "node --test --import tsx test/*.test.ts",
+    "test:live:claude": "scripts/validate-live-claude-agent-sdk.sh",
     "test:live:pi": "scripts/validate-live-pi-agent.sh",
     "test:live:process": "scripts/validate-live-server-process.sh",
     "test:live:vertical": "scripts/validate-live-vertical.sh",

@@ -3,6 +3,7 @@ import { connect, type NatsConnection } from 'nats';
 import { AhpServer } from '../server.js';
 import { FileSystemSessionStore } from '../store.js';
 import { createCodexAppServerProvider } from '../codex-app-server/provider.js';
+import { createClaudeAgentSdkProvider, type ClaudeAgentSdkOptions } from '../claude-agent-sdk/index.js';
 import { NatsServerTransport } from '../nats/transport.js';
 import { ahpNatsSubjects } from '../nats/subjects.js';
 import { createPiAgentProvider } from '../pi-agent/provider.js';
@@ -27,6 +28,13 @@ export async function startServerProcess(config: ServerProcessConfig): Promise<R
       socketPath: config.codexAppServerSocket,
       webSocketUrl: config.codexAppServerUrl,
       defaultModel: config.codexDefaultModel,
+    }));
+  }
+  if (config.claudeAgentSdkConfigured) {
+    providers.push(createClaudeAgentSdkProvider({
+      defaultModel: config.claudeAgentSdkModel,
+      pathToClaudeCodeExecutable: config.claudeAgentSdkExecutable,
+      permissionMode: config.claudeAgentSdkPermissionMode as ClaudeAgentSdkOptions['permissionMode'],
     }));
   }
   if (config.piAgentBaseUrl && config.piAgentApiKey && config.piAgentModel) {

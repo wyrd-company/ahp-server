@@ -15,8 +15,9 @@ This repository currently contains the first vertical-slice implementation:
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
+- A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions.
 - NATS transport adapters for both the server side and the TypeScript AHP client side.
-- Gated live integration tests for real NATS, real CAS, and the combined NATS -> AHP -> CAS -> NATS path.
+- Gated live integration tests for real NATS, real CAS, real Pi/OpenCode Go, real Claude Agent SDK, and packaged server-process paths.
 
 The first target demo is:
 
@@ -117,17 +118,31 @@ AHP_STORAGE_DIR=/workspace-storage/ahp-server \
 ahp-server
 ```
 
+For Claude Agent SDK:
+
+```bash
+NATS_URL=nats://nats:4222 \
+CLAUDE_AGENT_SDK_ENABLED=1 \
+CLAUDE_AGENT_SDK_MODEL=claude-sonnet-4-6 \
+AHP_STORAGE_DIR=/workspace-storage/ahp-server \
+ahp-server
+```
+
 Configuration:
 
 - `NATS_URL` is required.
 - Configure at least one provider:
   - Codex: `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL`.
+  - Claude Agent SDK: `CLAUDE_AGENT_SDK_ENABLED=1`, or set `CLAUDE_AGENT_SDK_MODEL` / `CLAUDE_AGENT_SDK_EXECUTABLE`.
   - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp`.
 - `AHP_SERVER_ID` defaults to `server`.
 - `AHP_CLIENT_ID` defaults to `client`.
 - `CODEX_DEFAULT_MODEL` defaults to `gpt-5.5`.
+- `CLAUDE_AGENT_SDK_MODEL` is optional; when omitted, the Claude SDK uses its default model.
+- `CLAUDE_AGENT_SDK_EXECUTABLE` optionally points at a Claude Code executable instead of the SDK bundled binary.
+- `CLAUDE_AGENT_SDK_PERMISSION_MODE` defaults to `dontAsk`.
 - `PI_AGENT_BASE_URL` is optional for built-in Pi providers. `opencode-go` defaults to `https://opencode.ai/zen/go/v1`.
 - `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
 - `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory. Plain paths are converted to `file://` URIs.
@@ -141,6 +156,7 @@ import {
   AhpServer,
   FileSystemSessionStore,
   createCodexAppServerProvider,
+  createClaudeAgentSdkProvider,
   createPiAgentProvider,
   createNatsServerTransport,
   ahpNatsSubjects,
@@ -164,6 +180,10 @@ const server = new AhpServer({
       apiKey: process.env.OPENCODE_API_KEY!,
       defaultModel: 'deepseek-v4-flash',
     }),
+    createClaudeAgentSdkProvider({
+      defaultModel: 'claude-sonnet-4-6',
+      permissionMode: 'dontAsk',
+    }),
   ],
 });
 
@@ -182,6 +202,7 @@ npm run verify
 task live:vertical
 task live:process
 task live:pi
+task live:claude
 ```
 
 `npm run verify` runs:
@@ -204,6 +225,10 @@ task live:process
 # The task loads .env from this repository root when present.
 task live:pi
 
+# Validate the Claude Agent SDK adapter and packaged server process.
+# The task loads .env from this repository root when present.
+task live:claude
+
 # .env example for Pi Agent live validation:
 OPENCODE_API_KEY=...
 PI_AGENT_MODEL=deepseek-v4-flash
@@ -211,6 +236,13 @@ PI_AGENT_MODEL=deepseek-v4-flash
 # PI_AGENT_PROVIDER=opencode-go
 # PI_AGENT_BASE_URL=https://opencode.ai/zen/go/v1
 # PI_AGENT_API_KEY=...
+
+# .env example for Claude Agent SDK live validation:
+CLAUDE_AGENT_SDK_ENABLED=1
+# Optional:
+# CLAUDE_AGENT_SDK_MODEL=claude-sonnet-4-6
+# CLAUDE_AGENT_SDK_EXECUTABLE=/path/to/claude
+# CLAUDE_AGENT_SDK_PERMISSION_MODE=dontAsk
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
@@ -256,11 +288,12 @@ NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-ser
 - Codex App Server protocol: `/workspaces/references/codex/codex-rs/app-server-protocol`
 - Codex App Server Rust client: `/workspaces/references/codex/codex-rs/app-server-client`
 - Pi Agent harness: `/workspaces/references/pi`
+- Claude Agent SDK: `/workspaces/references/claude-agent-sdk-typescript`
 - NATS TypeScript SDK: `/workspaces/references/nats.js`
 
 ## Planned Follow-Up
 
 - Extract adapter packages into sibling repos if that remains the preferred package layout.
 - Full Pi coding-agent runtime/RPC adapter if OpenAI-compatible chat completion is not enough for the desired workflow.
-- Claude Agent SDK and Cursor SDK risk spikes.
+- Cursor SDK risk spike.
 - A2A adapter where one A2A task maps to one AHP session.

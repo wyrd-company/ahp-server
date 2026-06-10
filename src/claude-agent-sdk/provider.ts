@@ -1,0 +1,342 @@
+import { fileURLToPath } from 'node:url';
+
+import type {
+  AgentInfo,
+  Message,
+  ModelSelection,
+  StateAction,
+  URI,
+} from '@microsoft/agent-host-protocol';
+
+import type {
+  AgentProvider,
+  AgentSession,
+  AgentSessionContext,
+  AgentTurnSink,
+} from '../types.js';
+import {
+  AnthropicClaudeAgentSdkClient,
+  type ClaudeAgentSdkClient,
+  type ClaudeAgentSdkMessage,
+  type ClaudeAgentSdkOptions,
+  type ClaudeAgentSdkQuery,
+  type ClaudeAgentSdkUserMessage,
+} from './client.js';
+
+export interface ClaudeAgentSdkProviderOptions {
+  readonly client?: ClaudeAgentSdkClient;
+  readonly clientFactory?: () => ClaudeAgentSdkClient;
+  readonly providerId?: string;
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly defaultModel?: string;
+  readonly pathToClaudeCodeExecutable?: string;
+  readonly permissionMode?: ClaudeAgentSdkOptions['permissionMode'];
+  readonly allowedTools?: readonly string[];
+  readonly disallowedTools?: readonly string[];
+  readonly tools?: ClaudeAgentSdkOptions['tools'];
+  readonly env?: ClaudeAgentSdkOptions['env'];
+}
+
+export function createClaudeAgentSdkProvider(options: ClaudeAgentSdkProviderOptions = {}): AgentProvider {
+  const providerId = options.providerId ?? 'claude-agent-sdk';
+  const defaultModel = options.defaultModel ?? 'default';
+  const agent: AgentInfo = {
+    provider: providerId,
+    displayName: options.displayName ?? 'Claude Agent SDK',
+    description: options.description ?? 'Claude Agent SDK adapter',
+    models: [
+      {
+        id: defaultModel,
+        provider: providerId,
+        name: defaultModel,
+      },
+    ],
+  };
+
+  return {
+    agent,
+    createSession(context: AgentSessionContext): AgentSession {
+      const client = options.client ?? options.clientFactory?.() ?? new AnthropicClaudeAgentSdkClient();
+      const cwd = context.workingDirectory ? uriToPath(context.workingDirectory) : process.cwd();
+      return new ClaudeAgentSdkAHPAgentSession(client, {
+        cwd,
+        model: modelId(context.model, options.defaultModel),
+        pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+        permissionMode: options.permissionMode ?? 'dontAsk',
+        allowedTools: options.allowedTools,
+        disallowedTools: options.disallowedTools,
+        tools: options.tools,
+        env: options.env,
+      });
+    },
+  };
+}
+
+interface ClaudeAgentSdkSessionOptions {
+  readonly cwd: string;
+  readonly model?: string;
+  readonly pathToClaudeCodeExecutable?: string;
+  readonly permissionMode: ClaudeAgentSdkOptions['permissionMode'];
+  readonly allowedTools?: readonly string[];
+  readonly disallowedTools?: readonly string[];
+  readonly tools?: ClaudeAgentSdkOptions['tools'];
+  readonly env?: ClaudeAgentSdkOptions['env'];
+}
+
+class ClaudeAgentSdkAHPAgentSession implements AgentSession {
+  private readonly input = new AsyncQueue<ClaudeAgentSdkUserMessage>();
+  private readonly abortController = new AbortController();
+  private query?: ClaudeAgentSdkQuery;
+  private iterator?: AsyncIterator<ClaudeAgentSdkMessage>;
+
+  constructor(
+    private readonly client: ClaudeAgentSdkClient,
+    private readonly options: ClaudeAgentSdkSessionOptions,
+  ) {}
+
+  async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
+    const ahpTurnId = turnId ?? `turn-${Date.now()}`;
+    const partId = `${ahpTurnId}:markdown`;
+    const query = this.ensureQuery();
+    let partEmitted = false;
+    let emittedStreamingDelta = false;
+    let emittedAnyText = false;
+
+    const emitDelta = (content: string): void => {
+      if (!content) {
+        return;
+      }
+      if (!partEmitted) {
+        partEmitted = true;
+        sink.emit(markdownPart(ahpTurnId, partId));
+      }
+      emittedAnyText = true;
+      sink.emit({
+        type: 'session/delta',
+        turnId: ahpTurnId,
+        partId,
+        content,
+      } as StateAction);
+    };
+
+    const interrupt = (): void => {
+      void query.interrupt().catch(() => undefined);
+    };
+    signal.addEventListener('abort', interrupt, { once: true });
+
+    try {
+      this.input.push(userMessage(message.text));
+      while (true) {
+        if (signal.aborted) {
+          return;
+        }
+        const next = await this.nextMessage(signal);
+        if (next.done) {
+          throw new Error('Claude Agent SDK query ended before the turn completed');
+        }
+
+        const sdkMessage = next.value;
+        if (sdkMessage.type === 'stream_event') {
+          const delta = streamEventTextDelta(sdkMessage.event);
+          if (delta) {
+            emittedStreamingDelta = true;
+            emitDelta(delta);
+          }
+          continue;
+        }
+
+        if (sdkMessage.type === 'assistant') {
+          if (sdkMessage.error) {
+            throw new Error(`Claude Agent SDK assistant error: ${sdkMessage.error}`);
+          }
+          if (!emittedStreamingDelta) {
+            for (const text of assistantText(sdkMessage)) {
+              emitDelta(text);
+            }
+          }
+          continue;
+        }
+
+        if (sdkMessage.type === 'result') {
+          if (sdkMessage.subtype !== 'success') {
+            const errors = 'errors' in sdkMessage ? sdkMessage.errors.join('; ') : '';
+            throw new Error(errors || `Claude Agent SDK result error: ${sdkMessage.subtype}`);
+          }
+          if (!emittedAnyText && sdkMessage.result) {
+            emitDelta(sdkMessage.result);
+          }
+          if (!partEmitted) {
+            sink.emit(markdownPart(ahpTurnId, partId));
+          }
+          sink.emit({
+            type: 'session/turnComplete',
+            turnId: ahpTurnId,
+          } as StateAction);
+          return;
+        }
+      }
+    } finally {
+      signal.removeEventListener('abort', interrupt);
+    }
+  }
+
+  async cancel(): Promise<void> {
+    await this.query?.interrupt().catch(() => undefined);
+  }
+
+  dispose(): void {
+    this.input.close();
+    this.abortController.abort();
+    this.query?.close();
+  }
+
+  private ensureQuery(): ClaudeAgentSdkQuery {
+    if (this.query) {
+      return this.query;
+    }
+
+    this.query = this.client.createQuery({
+      prompt: this.input,
+      options: {
+        abortController: this.abortController,
+        cwd: this.options.cwd,
+        ...(this.options.model ? { model: this.options.model } : {}),
+        ...(this.options.pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable } : {}),
+        permissionMode: this.options.permissionMode,
+        ...(this.options.allowedTools ? { allowedTools: [...this.options.allowedTools] } : {}),
+        ...(this.options.disallowedTools ? { disallowedTools: [...this.options.disallowedTools] } : {}),
+        ...(this.options.tools ? { tools: this.options.tools } : {}),
+        ...(this.options.env ? { env: this.options.env } : {}),
+        includePartialMessages: true,
+      },
+    });
+    this.iterator = this.query[Symbol.asyncIterator]();
+    return this.query;
+  }
+
+  private async nextMessage(signal: AbortSignal): Promise<IteratorResult<ClaudeAgentSdkMessage>> {
+    if (!this.iterator) {
+      throw new Error('Claude Agent SDK query was not initialized');
+    }
+    return Promise.race([
+      this.iterator.next(),
+      new Promise<IteratorResult<ClaudeAgentSdkMessage>>(resolve => {
+        if (signal.aborted) {
+          resolve({ done: true, value: undefined });
+          return;
+        }
+        signal.addEventListener(
+          'abort',
+          () => resolve({ done: true, value: undefined }),
+          { once: true },
+        );
+      }),
+    ]);
+  }
+}
+
+class AsyncQueue<T> implements AsyncIterable<T> {
+  private readonly values: T[] = [];
+  private readonly readers: Array<(result: IteratorResult<T>) => void> = [];
+  private closed = false;
+
+  push(value: T): void {
+    if (this.closed) {
+      throw new Error('cannot push to a closed queue');
+    }
+    const reader = this.readers.shift();
+    if (reader) {
+      reader({ done: false, value });
+      return;
+    }
+    this.values.push(value);
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    for (const reader of this.readers.splice(0)) {
+      reader({ done: true, value: undefined });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return {
+      next: async (): Promise<IteratorResult<T>> => {
+        const value = this.values.shift();
+        if (value) {
+          return { done: false, value };
+        }
+        if (this.closed) {
+          return { done: true, value: undefined };
+        }
+        return new Promise<IteratorResult<T>>(resolve => {
+          this.readers.push(resolve);
+        });
+      },
+    };
+  }
+}
+
+function markdownPart(turnId: string, partId: string): StateAction {
+  return {
+    type: 'session/responsePart',
+    turnId,
+    part: {
+      kind: 'markdown',
+      id: partId,
+      content: '',
+    },
+  } as StateAction;
+}
+
+function userMessage(text: string): ClaudeAgentSdkUserMessage {
+  return {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: text,
+    } as ClaudeAgentSdkUserMessage['message'],
+    parent_tool_use_id: null,
+  };
+}
+
+function assistantText(message: Extract<ClaudeAgentSdkMessage, { type: 'assistant' }>): string[] {
+  const content = message.message.content as unknown;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const chunks: string[] = [];
+  for (const block of content) {
+    if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') {
+      chunks.push(block.text);
+    }
+  }
+  return chunks;
+}
+
+function streamEventTextDelta(event: unknown): string | undefined {
+  if (!isRecord(event) || event.type !== 'content_block_delta' || !isRecord(event.delta)) {
+    return undefined;
+  }
+  const delta = event.delta;
+  return delta.type === 'text_delta' && typeof delta.text === 'string' ? delta.text : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function modelId(model: ModelSelection | undefined, fallback: string | undefined): string | undefined {
+  return model?.id ?? fallback;
+}
+
+function uriToPath(uri: URI): string {
+  if (!uri.startsWith('file://')) {
+    return uri;
+  }
+  return fileURLToPath(uri);
+}
