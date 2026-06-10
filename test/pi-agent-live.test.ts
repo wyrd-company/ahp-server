@@ -12,20 +12,22 @@ import {
 } from '../src/index.js';
 
 test('streams a live Pi Agent OpenAI-compatible turn through AHP', {
-  skip: process.env.PI_AGENT_BASE_URL && process.env.PI_AGENT_API_KEY && process.env.PI_AGENT_MODEL
+  skip: piAgentBaseUrl() && piAgentApiKey() && process.env.PI_AGENT_MODEL
     ? false
-    : 'set PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL to run live Pi Agent validation',
+    : 'set PI_AGENT_MODEL and PI_AGENT_API_KEY or OPENCODE_API_KEY to run live Pi Agent validation',
   timeout: 120_000,
 }, async () => {
-  assert.ok(process.env.PI_AGENT_BASE_URL);
-  assert.ok(process.env.PI_AGENT_API_KEY);
+  const baseUrl = piAgentBaseUrl();
+  const apiKey = piAgentApiKey();
+  assert.ok(baseUrl);
+  assert.ok(apiKey);
   assert.ok(process.env.PI_AGENT_MODEL);
 
   const server = new AhpServer({
     providers: [
       createPiAgentProvider({
-        baseUrl: process.env.PI_AGENT_BASE_URL,
-        apiKey: process.env.PI_AGENT_API_KEY,
+        baseUrl,
+        apiKey,
         defaultModel: process.env.PI_AGENT_MODEL,
       }),
     ],
@@ -97,6 +99,14 @@ function userMessage(text: string): Message {
     text,
     origin: { kind: 'user' as Message['origin']['kind'] },
   };
+}
+
+function piAgentBaseUrl(): string | undefined {
+  return process.env.PI_AGENT_BASE_URL || 'https://opencode.ai/zen/go/v1';
+}
+
+function piAgentApiKey(): string | undefined {
+  return process.env.PI_AGENT_API_KEY || process.env.OPENCODE_API_KEY;
 }
 
 function asAhpTransport(transport: {

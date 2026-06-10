@@ -110,9 +110,9 @@ For Pi Agent / OpenAI-compatible Chat Completions:
 
 ```bash
 NATS_URL=nats://nats:4222 \
-PI_AGENT_BASE_URL=https://provider.example/v1 \
-PI_AGENT_API_KEY=... \
-PI_AGENT_MODEL=... \
+PI_AGENT_PROVIDER=opencode-go \
+OPENCODE_API_KEY=... \
+PI_AGENT_MODEL=deepseek-v4-flash \
 AHP_STORAGE_DIR=/workspace-storage/ahp-server \
 ahp-server
 ```
@@ -122,12 +122,14 @@ Configuration:
 - `NATS_URL` is required.
 - Configure at least one provider:
   - Codex: `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL`.
-  - Pi Agent: `PI_AGENT_BASE_URL`, `PI_AGENT_API_KEY`, and `PI_AGENT_MODEL`.
+  - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp`.
 - `AHP_SERVER_ID` defaults to `server`.
 - `AHP_CLIENT_ID` defaults to `client`.
 - `CODEX_DEFAULT_MODEL` defaults to `gpt-5.5`.
+- `PI_AGENT_BASE_URL` is optional for built-in Pi providers. `opencode-go` defaults to `https://opencode.ai/zen/go/v1`.
+- `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
 - `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory. Plain paths are converted to `file://` URIs.
 
 The process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs.
@@ -158,9 +160,9 @@ const server = new AhpServer({
       socketPath: '/path/to/codex-app-server.sock',
     }),
     createPiAgentProvider({
-      baseUrl: 'https://provider.example/v1',
-      apiKey: process.env.PI_AGENT_API_KEY!,
-      defaultModel: 'provider-model-id',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      apiKey: process.env.OPENCODE_API_KEY!,
+      defaultModel: 'deepseek-v4-flash',
     }),
   ],
 });
@@ -203,9 +205,12 @@ task live:process
 task live:pi
 
 # .env example for Pi Agent live validation:
-PI_AGENT_BASE_URL=https://provider.example/v1
-PI_AGENT_API_KEY=...
-PI_AGENT_MODEL=...
+OPENCODE_API_KEY=...
+PI_AGENT_MODEL=deepseek-v4-flash
+# Optional overrides:
+# PI_AGENT_PROVIDER=opencode-go
+# PI_AGENT_BASE_URL=https://opencode.ai/zen/go/v1
+# PI_AGENT_API_KEY=...
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js

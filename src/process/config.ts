@@ -11,6 +11,7 @@ export interface ServerProcessConfig {
   readonly codexAppServerSocket?: string;
   readonly codexAppServerUrl?: string;
   readonly codexDefaultModel: string;
+  readonly piAgentProvider?: string;
   readonly piAgentBaseUrl?: string;
   readonly piAgentApiKey?: string;
   readonly piAgentModel?: string;
@@ -21,16 +22,18 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
   const natsUrl = requireEnv(env, 'NATS_URL');
   const codexAppServerSocket = optionalEnv(env, 'CODEX_APP_SERVER_SOCKET');
   const codexAppServerUrl = optionalEnv(env, 'CODEX_APP_SERVER_URL');
-  const piAgentBaseUrl = optionalEnv(env, 'PI_AGENT_BASE_URL');
-  const piAgentApiKey = optionalEnv(env, 'PI_AGENT_API_KEY');
+  const configuredPiAgentProvider = optionalEnv(env, 'PI_AGENT_PROVIDER');
+  const piAgentProvider = configuredPiAgentProvider ?? 'opencode-go';
+  const piAgentBaseUrl = optionalEnv(env, 'PI_AGENT_BASE_URL') ?? defaultPiAgentBaseUrl(piAgentProvider);
+  const piAgentApiKey = optionalEnv(env, 'PI_AGENT_API_KEY') ?? providerApiKey(env, piAgentProvider);
   const piAgentModel = optionalEnv(env, 'PI_AGENT_MODEL');
   const codexConfigured = Boolean(codexAppServerSocket || codexAppServerUrl);
-  const piConfigured = Boolean(piAgentBaseUrl || piAgentApiKey || piAgentModel);
+  const piConfigured = Boolean(configuredPiAgentProvider || optionalEnv(env, 'PI_AGENT_BASE_URL') || optionalEnv(env, 'PI_AGENT_API_KEY') || piAgentModel);
   if (!codexConfigured && !piConfigured) {
-    throw new Error('configure at least one provider: Codex endpoint or PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL');
+    throw new Error('configure at least one provider: Codex endpoint or PI_AGENT_MODEL with PI_AGENT_API_KEY/OPENCODE_API_KEY');
   }
   if (piConfigured && (!piAgentBaseUrl || !piAgentApiKey || !piAgentModel)) {
-    throw new Error('PI_AGENT_BASE_URL, PI_AGENT_API_KEY, and PI_AGENT_MODEL are required when configuring Pi Agent');
+    throw new Error('PI_AGENT_MODEL and a provider API key are required when configuring Pi Agent');
   }
 
   return {
@@ -42,9 +45,10 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
     codexAppServerSocket,
     codexAppServerUrl,
     codexDefaultModel: optionalEnv(env, 'CODEX_E2E_MODEL') ?? optionalEnv(env, 'CODEX_DEFAULT_MODEL') ?? 'gpt-5.5',
-    piAgentBaseUrl,
-    piAgentApiKey,
-    piAgentModel,
+    piAgentProvider: piConfigured ? piAgentProvider : undefined,
+    piAgentBaseUrl: piConfigured ? piAgentBaseUrl : undefined,
+    piAgentApiKey: piConfigured ? piAgentApiKey : undefined,
+    piAgentModel: piConfigured ? piAgentModel : undefined,
     defaultDirectory: toFileUri(optionalEnv(env, 'AHP_DEFAULT_DIRECTORY')),
   };
 }
@@ -60,6 +64,32 @@ function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
 function optionalEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const value = env[name]?.trim();
   return value ? value : undefined;
+}
+
+function providerApiKey(env: NodeJS.ProcessEnv, provider: string): string | undefined {
+  const envName = providerApiKeyEnvName(provider);
+  return envName ? optionalEnv(env, envName) : undefined;
+}
+
+function providerApiKeyEnvName(provider: string): string | undefined {
+  switch (provider) {
+    case 'opencode':
+    case 'opencode-go':
+      return 'OPENCODE_API_KEY';
+    default:
+      return undefined;
+  }
+}
+
+function defaultPiAgentBaseUrl(provider: string): string | undefined {
+  switch (provider) {
+    case 'opencode':
+      return 'https://opencode.ai/zen/v1';
+    case 'opencode-go':
+      return 'https://opencode.ai/zen/go/v1';
+    default:
+      return undefined;
+  }
 }
 
 function toFileUri(path: string | undefined): URI | undefined {

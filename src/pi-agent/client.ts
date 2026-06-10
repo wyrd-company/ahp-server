@@ -39,7 +39,7 @@ export class OpenAICompatiblePiAgentClient implements PiAgentChatClient {
   }
 
   async *streamChatCompletion(params: PiAgentStreamCompletionParams): AsyncIterable<string> {
-    const response = await this.fetchFn(`${trimTrailingSlash(this.options.baseUrl)}/chat/completions`, {
+    const response = await this.fetchFn(chatCompletionsUrl(this.options.baseUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${this.options.apiKey}`,
@@ -105,4 +105,9 @@ async function* parseServerSentEvents(body: ReadableStream<Uint8Array>): AsyncIt
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/g, '');
+}
+
+function chatCompletionsUrl(baseUrl: string): string {
+  const normalized = trimTrailingSlash(baseUrl);
+  return normalized.endsWith('/chat/completions') ? normalized : `${normalized}/chat/completions`;
 }

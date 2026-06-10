@@ -20,7 +20,7 @@ try {
     storageDirectory: config.storageDirectory,
     providers: [
       ...(config.codexAppServerSocket || config.codexAppServerUrl ? ['codex'] : []),
-      ...(config.piAgentBaseUrl ? ['pi-agent'] : []),
+      ...(config.piAgentProvider ? ['pi-agent'] : []),
     ],
   }));
 
