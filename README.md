@@ -16,8 +16,9 @@ This repository currently contains the first vertical-slice implementation:
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
 - A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions.
+- File-backed AHP `resource*` commands constrained to configured local roots.
 - NATS transport adapters for both the server side and the TypeScript AHP client side.
-- Gated live integration tests for real NATS, real CAS, real Pi/OpenCode Go, real Claude Agent SDK, and packaged server-process paths.
+- Gated live integration tests for real NATS, real CAS, real Pi/OpenCode Go, real Claude Agent SDK, resource commands, and packaged server-process paths.
 
 The first target demo is:
 
@@ -37,6 +38,8 @@ State can start in memory for tests and short-lived runs, or use `FileSystemSess
 
 Security is scoped for local devcontainer/Docker-network use first. Remote and multi-tenant security are not implemented, but the transport and provider boundaries should not make that impossible later.
 
+File resource commands only support `file://` URIs. They are constrained to `resourceRoots` in library mode, or `AHP_DEFAULT_DIRECTORY` in the packaged process. If no root is configured, the server process working directory is used. Existing targets are checked through `realpath` so symlinks cannot escape the allowed root.
+
 ## Implemented AHP Surface
 
 The server currently implements the minimum useful session surface:
@@ -47,12 +50,22 @@ The server currently implements the minimum useful session surface:
 - `subscribe`
 - `unsubscribe`
 - `listSessions`
+- `resourceRead`
+- `resourceWrite`
+- `resourceList`
+- `resourceCopy`
+- `resourceDelete`
+- `resourceMove`
+- `resourceResolve`
+- `resourceMkdir`
 - `resolveSessionConfig`
 - `createSession`
 - `disposeSession`
 - `fetchTurns`
 - `completions`
 - `dispatchAction`
+
+`completions` currently returns an empty result. `resourceRequest` and `createResourceWatch` are not implemented yet.
 
 Session output is streamed as AHP `action` notifications using:
 
@@ -145,7 +158,7 @@ Configuration:
 - `CLAUDE_AGENT_SDK_PERMISSION_MODE` defaults to `dontAsk`.
 - `PI_AGENT_BASE_URL` is optional for built-in Pi providers. `opencode-go` defaults to `https://opencode.ai/zen/go/v1`.
 - `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
-- `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory. Plain paths are converted to `file://` URIs.
+- `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory and packaged-process resource root. Plain paths are converted to `file://` URIs.
 
 The process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs.
 
@@ -171,6 +184,8 @@ const server = new AhpServer({
   store: new FileSystemSessionStore({
     directory: '/workspace-storage/ahp-server',
   }),
+  defaultDirectory: 'file:///workspace',
+  resourceRoots: ['file:///workspace'],
   providers: [
     createCodexAppServerProvider({
       socketPath: '/path/to/codex-app-server.sock',
@@ -203,6 +218,7 @@ task live:vertical
 task live:process
 task live:pi
 task live:claude
+task live:resources
 ```
 
 `npm run verify` runs:
@@ -228,6 +244,9 @@ task live:pi
 # Validate the Claude Agent SDK adapter and packaged server process.
 # The task loads .env from this repository root when present.
 task live:claude
+
+# Validate packaged file resource commands over Docker NATS.
+task live:resources
 
 # .env example for Pi Agent live validation:
 OPENCODE_API_KEY=...

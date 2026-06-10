@@ -10,6 +10,9 @@ export const JsonRpcErrorCodes = {
   SessionAlreadyExists: -32003,
   UnsupportedProtocolVersion: -32005,
   NotFound: -32008,
+  PermissionDenied: -32009,
+  AlreadyExists: -32010,
+  Conflict: -32011,
 } as const;
 
 export class AhpServerError extends Error {
@@ -39,4 +42,3 @@ export function toJsonRpcError(error: unknown): JsonRpcError {
   }
   return { code: JsonRpcErrorCodes.InternalError, message: String(error) };
 }
-

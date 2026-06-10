@@ -13,6 +13,14 @@ import {
   type Message,
   type ReconnectParams,
   type ReconnectResult,
+  type ResourceCopyParams,
+  type ResourceDeleteParams,
+  type ResourceListParams,
+  type ResourceMkdirParams,
+  type ResourceMoveParams,
+  type ResourceReadParams,
+  type ResourceResolveParams,
+  type ResourceWriteParams,
   type ResolveSessionConfigParams,
   type ResolveSessionConfigResult,
   type SessionAction,
@@ -26,6 +34,7 @@ import {
 } from '@microsoft/agent-host-protocol';
 
 import { AhpServerError, JsonRpcErrorCodes, toJsonRpcError } from './errors.js';
+import { FileResourceService } from './resources.js';
 import { InMemorySessionStore } from './store.js';
 import type {
   AgentProvider,
@@ -65,6 +74,7 @@ export class AhpServer {
   private readonly providers = new Map<string, AgentProvider>();
   private readonly store: SessionStore;
   private readonly supportedProtocolVersions: string[];
+  private readonly resources: FileResourceService;
   private readonly connections = new Set<ClientConnection>();
   private serverSeq = 0;
 
@@ -74,6 +84,9 @@ export class AhpServer {
     }
     this.store = options.store ?? new InMemorySessionStore(options.providers.map(p => p.agent));
     this.supportedProtocolVersions = [...(options.supportedProtocolVersions ?? SUPPORTED_PROTOCOL_VERSIONS)];
+    this.resources = new FileResourceService({
+      roots: options.resourceRoots ?? (options.defaultDirectory ? [options.defaultDirectory] : undefined),
+    });
   }
 
   async accept(transport: ServerTransport): Promise<void> {
@@ -141,6 +154,22 @@ export class AhpServer {
         return this.subscribe(connection, params as SubscribeParams);
       case 'listSessions':
         return this.listSessions();
+      case 'resourceRead':
+        return this.resources.read(params as ResourceReadParams);
+      case 'resourceWrite':
+        return this.resources.write(params as ResourceWriteParams);
+      case 'resourceList':
+        return this.resources.list(params as ResourceListParams);
+      case 'resourceCopy':
+        return this.resources.copy(params as ResourceCopyParams);
+      case 'resourceDelete':
+        return this.resources.delete(params as ResourceDeleteParams);
+      case 'resourceMove':
+        return this.resources.move(params as ResourceMoveParams);
+      case 'resourceResolve':
+        return this.resources.resolve(params as ResourceResolveParams);
+      case 'resourceMkdir':
+        return this.resources.mkdir(params as ResourceMkdirParams);
       case 'resolveSessionConfig':
         return this.resolveSessionConfig(params as ResolveSessionConfigParams);
       case 'createSession':

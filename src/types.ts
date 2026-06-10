@@ -96,4 +96,5 @@ export interface AhpServerOptions {
   readonly store?: SessionStore;
   readonly supportedProtocolVersions?: readonly string[];
   readonly defaultDirectory?: URI;
+  readonly resourceRoots?: readonly URI[];
 }

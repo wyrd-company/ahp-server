@@ -52,6 +52,7 @@
     "test:live:claude": "scripts/validate-live-claude-agent-sdk.sh",
     "test:live:pi": "scripts/validate-live-pi-agent.sh",
     "test:live:process": "scripts/validate-live-server-process.sh",
+    "test:live:resources": "scripts/validate-live-resources.sh",
     "test:live:vertical": "scripts/validate-live-vertical.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
