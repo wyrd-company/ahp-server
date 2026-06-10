@@ -3,13 +3,14 @@ export {
   NatsServerTransport,
   createNatsAhpClientTransport,
   createNatsServerTransport,
-  type AhpNatsTransportOptions,
-  type MsgLike,
-  type NatsConnectionLike,
-} from './transport.js';
+} from '@wyrd-company/ahp-nats';
 export {
   ahpNatsSubjects,
-  type AhpNatsSubjectOptions,
-  type AhpNatsSubjectPair,
-} from './subjects.js';
-
+} from '@wyrd-company/ahp-nats';
+export type {
+  AhpNatsSubjectOptions,
+  AhpNatsSubjectPair,
+  AhpNatsTransportOptions,
+  MsgLike,
+  NatsConnectionLike,
+} from '@wyrd-company/ahp-nats';

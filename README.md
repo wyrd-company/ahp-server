@@ -17,7 +17,9 @@ This repository currently contains the first vertical-slice implementation:
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
 - A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions.
 - File-backed AHP `resource*` commands constrained to configured local roots.
-- NATS transport adapters for both the server side and the TypeScript AHP client side.
+- Transport adapters provided by sibling packages, with TypeScript as the first implementation:
+  - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
+  - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
 - Gated live integration tests for real NATS, real CAS, real Pi/OpenCode Go, real Claude Agent SDK, resource commands, and packaged server-process paths.
 
 The first target demo is:
@@ -32,7 +34,7 @@ The normal test suite validates the AHP client/server flow, CAS adapter mapping 
 
 The server is intended to be protocol-compliant with the Microsoft AHP TypeScript client as the compatibility tie-breaker. If protocol documentation and VS Code reference behavior disagree, this project follows the TypeScript client.
 
-Adapters are explicit plugins. Users import optional packages and wire them into the server deliberately; runtime package discovery is not part of the first design. The code is currently colocated in this repo to keep context close, but the boundaries are shaped so `ahp-codex-app-server`, `ahp-nats`, and later adapters can move to sibling packages.
+Adapters and transports are explicit packages. Users import optional packages and wire them into the server deliberately; runtime package discovery is not part of the first design. NATS and gRPC transports now live in sibling repos so their wire contracts can evolve toward multi-language implementations, with TypeScript as the initial implementation.
 
 State can start in memory for tests and short-lived runs, or use `FileSystemSessionStore` to persist session state into a mounted directory across devcontainer rebuilds. Adapter runtime handles are intentionally not serialized; provider sessions are recreated by adapter/server wiring.
 
@@ -104,11 +106,27 @@ The initial subject convention is:
 
 The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token text.
 
+## gRPC Convention
+
+The gRPC transport package exposes one bidirectional streaming RPC over a Unix domain socket:
+
+```protobuf
+service AhpTransport {
+  rpc Connect(stream AhpFrame) returns (stream AhpFrame);
+}
+
+message AhpFrame {
+  string text = 1;
+}
+```
+
+Each `text` value is one UTF-8 JSON-RPC AHP frame. The canonical proto lives in `@wyrd-company/ahp-grpc` under `proto/wyrd/ahp/transport/v1/transport.proto`.
+
 ## Usage Sketch
 
 ### Packaged Process
 
-The package exposes an `ahp-server` executable. The current process slice wires one NATS route, one filesystem store, and explicitly configured adapters.
+The package exposes an `ahp-server` executable. The current process slice wires one filesystem store, one or more configured transports, and explicitly configured adapters.
 
 ```bash
 NATS_URL=nats://nats:4222 \
@@ -119,6 +137,17 @@ AHP_SERVER_ID=devcontainer-1 \
 AHP_CLIENT_ID=client-1 \
 ahp-server
 ```
+
+For gRPC over a Unix domain socket:
+
+```bash
+AHP_GRPC_UNIX_SOCKET=/tmp/ahp-server/ahp.sock \
+CLAUDE_AGENT_SDK_ENABLED=1 \
+AHP_STORAGE_DIR=/workspace-storage/ahp-server \
+ahp-server
+```
+
+NATS and gRPC can be enabled at the same time by setting both `NATS_URL` and `AHP_GRPC_UNIX_SOCKET`.
 
 For Pi Agent / OpenAI-compatible Chat Completions:
 
@@ -143,15 +172,17 @@ ahp-server
 
 Configuration:
 
-- `NATS_URL` is required.
+- Configure at least one transport:
+  - `NATS_URL` for the NATS transport.
+  - `AHP_GRPC_UNIX_SOCKET` for the gRPC Unix domain socket transport. `AHP_GRPC_UDS_PATH` is accepted as an alias.
 - Configure at least one provider:
   - Codex: `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL`.
   - Claude Agent SDK: `CLAUDE_AGENT_SDK_ENABLED=1`, or set `CLAUDE_AGENT_SDK_MODEL` / `CLAUDE_AGENT_SDK_EXECUTABLE`.
   - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
-- `AHP_NATS_NAMESPACE` defaults to `ahp`.
-- `AHP_SERVER_ID` defaults to `server`.
-- `AHP_CLIENT_ID` defaults to `client`.
+- `AHP_NATS_NAMESPACE` defaults to `ahp` when NATS is enabled.
+- `AHP_SERVER_ID` defaults to `server` when NATS is enabled.
+- `AHP_CLIENT_ID` defaults to `client` when NATS is enabled.
 - `CODEX_DEFAULT_MODEL` defaults to `gpt-5.5`.
 - `CLAUDE_AGENT_SDK_MODEL` is optional; when omitted, the Claude SDK uses its default model.
 - `CLAUDE_AGENT_SDK_EXECUTABLE` optionally points at a Claude Code executable instead of the SDK bundled binary.
@@ -160,7 +191,7 @@ Configuration:
 - `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
 - `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory and packaged-process resource root. Plain paths are converted to `file://` URIs.
 
-The process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs.
+When NATS is enabled, the process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs. When gRPC is enabled, the process listens on the configured Unix socket and accepts one AHP client stream per gRPC `Connect` call.
 
 ### Library
 
@@ -171,9 +202,14 @@ import {
   createCodexAppServerProvider,
   createClaudeAgentSdkProvider,
   createPiAgentProvider,
+} from '@wyrd-company/ahp-server';
+import {
   createNatsServerTransport,
   ahpNatsSubjects,
-} from '@wyrd-company/ahp-server';
+} from '@wyrd-company/ahp-nats';
+import {
+  createGrpcUdsServer,
+} from '@wyrd-company/ahp-grpc';
 
 const subjects = ahpNatsSubjects({
   serverId: 'devcontainer-1',
@@ -207,6 +243,14 @@ await server.accept(createNatsServerTransport({
   inboundSubject: subjects.clientToServer,
   outboundSubject: subjects.serverToClient,
 }));
+
+const grpcServer = createGrpcUdsServer({
+  socketPath: '/tmp/ahp-server/ahp.sock',
+  onTransport: transport => {
+    void server.accept(transport);
+  },
+});
+await grpcServer.listen();
 ```
 
 ## Development

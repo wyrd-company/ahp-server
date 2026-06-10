@@ -3,10 +3,11 @@ import { resolve } from 'node:path';
 import type { URI } from '@microsoft/agent-host-protocol';
 
 export interface ServerProcessConfig {
-  readonly natsUrl: string;
+  readonly natsUrl?: string;
   readonly natsNamespace: string;
   readonly serverId: string;
   readonly clientId: string;
+  readonly grpcUnixSocket?: string;
   readonly storageDirectory: string;
   readonly codexAppServerSocket?: string;
   readonly codexAppServerUrl?: string;
@@ -23,7 +24,8 @@ export interface ServerProcessConfig {
 }
 
 export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): ServerProcessConfig {
-  const natsUrl = requireEnv(env, 'NATS_URL');
+  const natsUrl = optionalEnv(env, 'NATS_URL');
+  const grpcUnixSocket = optionalEnv(env, 'AHP_GRPC_UNIX_SOCKET') ?? optionalEnv(env, 'AHP_GRPC_UDS_PATH');
   const codexAppServerSocket = optionalEnv(env, 'CODEX_APP_SERVER_SOCKET');
   const codexAppServerUrl = optionalEnv(env, 'CODEX_APP_SERVER_URL');
   const claudeAgentSdkModel = optionalEnv(env, 'CLAUDE_AGENT_SDK_MODEL');
@@ -38,6 +40,9 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
   const codexConfigured = Boolean(codexAppServerSocket || codexAppServerUrl);
   const claudeConfigured = Boolean(claudeAgentSdkEnabled || claudeAgentSdkModel || claudeAgentSdkExecutable);
   const piConfigured = Boolean(configuredPiAgentProvider || optionalEnv(env, 'PI_AGENT_BASE_URL') || optionalEnv(env, 'PI_AGENT_API_KEY') || piAgentModel);
+  if (!natsUrl && !grpcUnixSocket) {
+    throw new Error('configure at least one transport: NATS_URL or AHP_GRPC_UNIX_SOCKET');
+  }
   if (!codexConfigured && !claudeConfigured && !piConfigured) {
     throw new Error('configure at least one provider: Codex endpoint, CLAUDE_AGENT_SDK_ENABLED, or PI_AGENT_MODEL with PI_AGENT_API_KEY/OPENCODE_API_KEY');
   }
@@ -50,6 +55,7 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
     natsNamespace: optionalEnv(env, 'AHP_NATS_NAMESPACE') ?? 'ahp',
     serverId: optionalEnv(env, 'AHP_SERVER_ID') ?? 'server',
     clientId: optionalEnv(env, 'AHP_CLIENT_ID') ?? 'client',
+    grpcUnixSocket: grpcUnixSocket ? resolve(grpcUnixSocket) : undefined,
     storageDirectory: resolve(optionalEnv(env, 'AHP_STORAGE_DIR') ?? '.ahp-server'),
     codexAppServerSocket,
     codexAppServerUrl,
@@ -64,14 +70,6 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
     piAgentModel: piConfigured ? piAgentModel : undefined,
     defaultDirectory: toFileUri(optionalEnv(env, 'AHP_DEFAULT_DIRECTORY')),
   };
-}
-
-function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
-  const value = optionalEnv(env, name);
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
 }
 
 function optionalEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {

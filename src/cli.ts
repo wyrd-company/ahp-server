@@ -1,22 +1,25 @@
 #!/usr/bin/env node
 import { readServerProcessConfig } from './process/config.js';
 import { startServerProcess } from './process/run.js';
-import { ahpNatsSubjects } from './nats/subjects.js';
+import { ahpNatsSubjects } from '@wyrd-company/ahp-nats';
 
 try {
   const config = readServerProcessConfig();
   const running = await startServerProcess(config);
-  const subjects = ahpNatsSubjects({
-    namespace: config.natsNamespace,
-    serverId: config.serverId,
-    clientId: config.clientId,
-  });
+  const subjects = config.natsUrl
+    ? ahpNatsSubjects({
+      namespace: config.natsNamespace,
+      serverId: config.serverId,
+      clientId: config.clientId,
+    })
+    : undefined;
 
   await running.ready;
   console.log(JSON.stringify({
     event: 'ahp-server.ready',
     natsUrl: config.natsUrl,
     subjects,
+    grpcUnixSocket: config.grpcUnixSocket,
     storageDirectory: config.storageDirectory,
     providers: [
       ...(config.codexAppServerSocket || config.codexAppServerUrl ? ['codex'] : []),

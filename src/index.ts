@@ -4,6 +4,14 @@ export { InMemoryServerTransport, createInMemoryTransportPair } from './transpor
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
 export { createClaudeAgentSdkProvider, AnthropicClaudeAgentSdkClient } from './claude-agent-sdk/index.js';
 export {
+  AhpGrpcUdsServer,
+  GrpcAhpClientTransport,
+  GrpcServerTransport,
+  createGrpcAhpClientTransport,
+  createGrpcUdsServer,
+  grpcUdsAddress,
+} from './grpc/index.js';
+export {
   NatsAhpClientTransport,
   NatsServerTransport,
   ahpNatsSubjects,
@@ -43,6 +51,11 @@ export type {
   ClaudeAgentSdkQueryParams,
   ClaudeAgentSdkUserMessage,
 } from './claude-agent-sdk/index.js';
+export type {
+  AhpGrpcUdsClientTransportOptions,
+  AhpGrpcUdsServerOptions,
+  GrpcFrame,
+} from './grpc/index.js';
 export type {
   AhpNatsSubjectOptions,
   AhpNatsSubjectPair,

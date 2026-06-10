@@ -10,6 +10,7 @@ test('reads server process configuration from environment', () => {
     AHP_NATS_NAMESPACE: 'demo',
     AHP_SERVER_ID: 'server-a',
     AHP_CLIENT_ID: 'client-a',
+    AHP_GRPC_UNIX_SOCKET: '/tmp/ahp.sock',
     AHP_STORAGE_DIR: 'relative-storage',
     AHP_DEFAULT_DIRECTORY: '/workspaces/example',
     CODEX_DEFAULT_MODEL: 'gpt-test',
@@ -27,6 +28,7 @@ test('reads server process configuration from environment', () => {
   assert.equal(config.natsNamespace, 'demo');
   assert.equal(config.serverId, 'server-a');
   assert.equal(config.clientId, 'client-a');
+  assert.equal(config.grpcUnixSocket, '/tmp/ahp.sock');
   assert.ok(config.storageDirectory.endsWith('/relative-storage'));
   assert.equal(config.defaultDirectory, 'file:///workspaces/example');
   assert.equal(config.codexDefaultModel, 'gpt-test');
@@ -40,10 +42,10 @@ test('reads server process configuration from environment', () => {
   assert.equal(config.piAgentModel, 'pi-model');
 });
 
-test('requires NATS and at least one provider', () => {
+test('requires at least one transport and at least one provider', () => {
   assert.throws(
     () => readServerProcessConfig({ CODEX_APP_SERVER_SOCKET: '/tmp/codex.sock' }),
-    /NATS_URL is required/,
+    /configure at least one transport/,
   );
   assert.throws(
     () => readServerProcessConfig({ NATS_URL: 'nats://127.0.0.1:4222' }),
@@ -57,6 +59,17 @@ test('requires NATS and at least one provider', () => {
     }),
     /PI_AGENT_MODEL and a provider API key are required/,
   );
+});
+
+test('allows gRPC Unix socket as the only transport', () => {
+  const config = readServerProcessConfig({
+    AHP_GRPC_UDS_PATH: 'relative.sock',
+    CLAUDE_AGENT_SDK_ENABLED: 'true',
+  });
+
+  assert.ok(config.grpcUnixSocket?.endsWith('/relative.sock'));
+  assert.equal(config.natsUrl, undefined);
+  assert.equal(config.claudeAgentSdkConfigured, true);
 });
 
 test('allows explicit Pi Agent key and base URL overrides', () => {
