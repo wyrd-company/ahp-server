@@ -10,6 +10,7 @@ export {
   createNatsServerTransport,
 } from './nats/index.js';
 export { readServerProcessConfig, startServerProcess } from './process/index.js';
+export { createPiAgentProvider, OpenAICompatiblePiAgentClient } from './pi-agent/index.js';
 export type {
   AgentProvider,
   AgentSession,
@@ -42,3 +43,10 @@ export type {
   RunningServerProcess,
   ServerProcessConfig,
 } from './process/index.js';
+export type {
+  OpenAICompatiblePiAgentClientOptions,
+  PiAgentChatClient,
+  PiAgentChatMessage,
+  PiAgentProviderOptions,
+  PiAgentStreamCompletionParams,
+} from './pi-agent/index.js';

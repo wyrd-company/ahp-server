@@ -35,6 +35,10 @@
     "./process": {
       "import": "./dist/src/process/index.js",
       "types": "./dist/src/process/index.d.ts"
+    },
+    "./pi-agent": {
+      "import": "./dist/src/pi-agent/index.js",
+      "types": "./dist/src/pi-agent/index.d.ts"
     }
   },
   "scripts": {
