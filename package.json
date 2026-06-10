@@ -14,20 +14,27 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "bin": {
+    "ahp-server": "./dist/src/cli.js"
+  },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
     },
     "./codex-app-server": {
-      "import": "./dist/codex-app-server/index.js",
-      "types": "./dist/codex-app-server/index.d.ts"
+      "import": "./dist/src/codex-app-server/index.js",
+      "types": "./dist/src/codex-app-server/index.d.ts"
     },
     "./nats": {
-      "import": "./dist/nats/index.js",
-      "types": "./dist/nats/index.d.ts"
+      "import": "./dist/src/nats/index.js",
+      "types": "./dist/src/nats/index.d.ts"
+    },
+    "./process": {
+      "import": "./dist/src/process/index.js",
+      "types": "./dist/src/process/index.d.ts"
     }
   },
   "scripts": {

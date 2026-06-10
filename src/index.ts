@@ -9,6 +9,7 @@ export {
   createNatsAhpClientTransport,
   createNatsServerTransport,
 } from './nats/index.js';
+export { readServerProcessConfig, startServerProcess } from './process/index.js';
 export type {
   AgentProvider,
   AgentSession,
@@ -37,3 +38,7 @@ export type {
   AhpNatsTransportOptions,
   NatsConnectionLike,
 } from './nats/index.js';
+export type {
+  RunningServerProcess,
+  ServerProcessConfig,
+} from './process/index.js';
