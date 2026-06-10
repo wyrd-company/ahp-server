@@ -25,3 +25,8 @@ tasks:
     desc: Run the live NATS plus Codex App Server vertical-slice validation
     cmds:
       - scripts/validate-live-vertical.sh
+
+  live:process:
+    desc: Run the live packaged server-process validation
+    cmds:
+      - scripts/validate-live-server-process.sh

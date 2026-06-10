@@ -23,7 +23,7 @@ The first target demo is:
 NATS client -> AHP server -> Codex App Server Unix socket -> streamed Codex response -> NATS client
 ```
 
-The normal test suite validates the AHP client/server flow, CAS adapter mapping with a fake CAS client, and NATS subject routing with a fake in-process broker. Gated live tests validate against real services when endpoints are provided.
+The normal test suite validates the AHP client/server flow, CAS adapter mapping with a fake CAS client, and NATS subject routing with a fake in-process broker. Gated live tests validate against real services when endpoints are provided, including the packaged `ahp-server` process.
 
 ## Design Direction
 
@@ -91,6 +91,35 @@ The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token 
 
 ## Usage Sketch
 
+### Packaged Process
+
+The package exposes an `ahp-server` executable. The current process slice wires one NATS route, one filesystem store, and the Codex App Server adapter:
+
+```bash
+NATS_URL=nats://nats:4222 \
+CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock \
+AHP_STORAGE_DIR=/workspace-storage/ahp-server \
+AHP_NATS_NAMESPACE=ahp \
+AHP_SERVER_ID=devcontainer-1 \
+AHP_CLIENT_ID=client-1 \
+ahp-server
+```
+
+Configuration:
+
+- `NATS_URL` is required.
+- `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL` is required.
+- `AHP_STORAGE_DIR` defaults to `.ahp-server`.
+- `AHP_NATS_NAMESPACE` defaults to `ahp`.
+- `AHP_SERVER_ID` defaults to `server`.
+- `AHP_CLIENT_ID` defaults to `client`.
+- `CODEX_DEFAULT_MODEL` defaults to `gpt-5.5`.
+- `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory. Plain paths are converted to `file://` URIs.
+
+The process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs.
+
+### Library
+
 ```ts
 import {
   AhpServer,
@@ -129,6 +158,7 @@ await server.accept(createNatsServerTransport({
 npm install
 npm run verify
 task live:vertical
+task live:process
 ```
 
 `npm run verify` runs:
@@ -143,6 +173,9 @@ Live validation is opt-in because it requires external processes and, for the fu
 # Preferred repeatable full validation. Starts Docker NATS and CAS over Unix socket
 # when NATS_URL and CODEX_APP_SERVER_URL/CODEX_APP_SERVER_SOCKET are not supplied.
 task live:vertical
+
+# Validate the packaged server process against Docker NATS and CAS over Unix socket.
+task live:process
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
