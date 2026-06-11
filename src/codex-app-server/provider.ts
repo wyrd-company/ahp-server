@@ -1,25 +1,26 @@
-import { fileURLToPath } from 'node:url';
-
 import type {
   AgentInfo,
   Message,
-  ModelSelection,
   StringOrMarkdown,
-  StateAction,
   ToolCallResult,
   ToolDefinition,
   ToolResultContent,
-  URI,
 } from '@microsoft/agent-host-protocol';
 
 import type {
-  ActiveClientToolSink,
   ActiveClientTools,
   AgentProvider,
   AgentSession,
   AgentSessionContext,
   AgentTurnSink,
 } from '../types.js';
+import {
+  ActiveClientToolRouter,
+  MarkdownTurnEmitter,
+  resolveModelId,
+  singleModelAgentInfo,
+  uriToPath,
+} from '../provider-kit.js';
 import {
   CodexAppServerSocketClient,
   type CodexAppServerClient,
@@ -79,18 +80,12 @@ const ACTIVE_CLIENT_TOOL_NAMESPACE = 'ahp_active_client';
 export function createCodexAppServerProvider(options: CodexAppServerProviderOptions): AgentProvider {
   const providerId = options.providerId ?? 'codex';
   const defaultModel = options.defaultModel ?? 'codex';
-  const agent: AgentInfo = {
-    provider: providerId,
+  const agent: AgentInfo = singleModelAgentInfo({
+    providerId,
     displayName: options.displayName ?? 'Codex',
     description: options.description ?? 'Codex App Server adapter',
-    models: [
-      {
-        id: defaultModel,
-        provider: providerId,
-        name: defaultModel,
-      },
-    ],
-  };
+    defaultModel,
+  });
 
   return {
     agent,
@@ -98,7 +93,7 @@ export function createCodexAppServerProvider(options: CodexAppServerProviderOpti
       const client = options.client ?? options.clientFactory?.() ?? createSocketClient(options);
       await client.connect();
       const cwd = context.workingDirectory ? uriToPath(context.workingDirectory) : process.cwd();
-      const model = modelId(context.model, defaultModel);
+      const model = resolveModelId(context.model, defaultModel);
       const dynamicTools = toDynamicToolSpecs(context.activeClientTools?.tools);
       const start = await client.request<ThreadStartResponse>('thread/start', {
         cwd,
@@ -134,22 +129,25 @@ function createSocketClient(options: CodexAppServerProviderOptions): CodexAppSer
 }
 
 class CodexAHPAgentSession implements AgentSession {
-  private activeClientTools: ActiveClientTools | undefined;
+  private readonly activeClientTools: ActiveClientToolRouter;
 
   constructor(
     private readonly client: CodexAppServerClient,
     private readonly threadId: string,
     private readonly model: string,
     activeClientTools: ActiveClientTools | undefined,
-    private readonly activeClientToolSink: ActiveClientToolSink,
+    activeClientToolSink: AgentSessionContext['activeClientToolSink'],
   ) {
-    this.activeClientTools = activeClientTools;
+    this.activeClientTools = new ActiveClientToolRouter({
+      activeClientTools,
+      sink: activeClientToolSink,
+    });
   }
 
   async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
     const ahpTurnId = turnId ?? `turn-${Date.now()}`;
+    const markdown = new MarkdownTurnEmitter(sink, ahpTurnId);
     let codexTurnId: string | undefined;
-    let markdownPartEmitted = false;
     let complete: (() => void) | undefined;
     let fail: ((error: Error) => void) | undefined;
 
@@ -174,25 +172,13 @@ class CodexAHPAgentSession implements AgentSession {
         if (notification.method === 'item/agentMessage/delta') {
           const params = notification.params as { delta?: string; turnId?: string };
           codexTurnId = params.turnId ?? codexTurnId;
-          if (!markdownPartEmitted) {
-            markdownPartEmitted = true;
-            sink.emit(markdownPart(ahpTurnId));
-          }
-          sink.emit({
-            type: 'session/delta',
-            turnId: ahpTurnId,
-            partId: markdownPartId(ahpTurnId),
-            content: params.delta ?? '',
-          } as StateAction);
+          markdown.emitDelta(params.delta ?? '');
           return;
         }
         if (notification.method === 'turn/completed') {
           const params = notification.params as { turn?: { id?: string } };
           codexTurnId = params.turn?.id ?? codexTurnId;
-          sink.emit({
-            type: 'session/turnComplete',
-            turnId: ahpTurnId,
-          } as StateAction);
+          markdown.complete();
           complete?.();
           return;
         }
@@ -230,7 +216,7 @@ class CodexAHPAgentSession implements AgentSession {
   }
 
   setActiveClientTools(activeClientTools: ActiveClientTools | undefined): void {
-    this.activeClientTools = activeClientTools;
+    this.activeClientTools.setActiveClientTools(activeClientTools);
   }
 
   async cancel(reason?: string): Promise<void> {
@@ -253,18 +239,16 @@ class CodexAHPAgentSession implements AgentSession {
       throw new Error(`Codex dynamic tool namespace is not handled by this adapter: ${params.namespace}`);
     }
 
-    const tool = this.activeClientTools?.tools.find(candidate => candidate.name === params.tool);
+    const tool = this.activeClientTools.findTool(params.tool);
     if (!tool) {
       return dynamicToolErrorResponse(`Active-client tool is not available: ${params.tool}`);
     }
 
     try {
-      const result = await this.activeClientToolSink.reportInvocation({
+      const result = await this.activeClientTools.reportInvocation({
         turnId: ahpTurnId,
         toolCallId: params.callId,
         toolName: params.tool,
-        displayName: tool.title ?? tool.name,
-        invocationMessage: tool.title ?? tool.name,
         toolInput: JSON.stringify(params.arguments ?? {}),
       });
       return toDynamicToolCallResponse(result);
@@ -274,36 +258,9 @@ class CodexAHPAgentSession implements AgentSession {
   }
 }
 
-function markdownPart(turnId: string): StateAction {
-  return {
-    type: 'session/responsePart',
-    turnId,
-    part: {
-      kind: 'markdown',
-      id: markdownPartId(turnId),
-      content: '',
-    },
-  } as StateAction;
-}
-
-function markdownPartId(turnId: string): string {
-  return `${turnId}:markdown`;
-}
-
 function isThreadNotification(notification: CodexJsonRpcNotification, threadId: string): boolean {
   const params = notification.params as { threadId?: string } | undefined;
   return params?.threadId === undefined || params.threadId === threadId;
-}
-
-function modelId(model: ModelSelection | undefined, fallback: string): string {
-  return model?.id ?? fallback;
-}
-
-function uriToPath(uri: URI): string {
-  if (!uri.startsWith('file://')) {
-    return uri;
-  }
-  return fileURLToPath(uri);
 }
 
 function toDynamicToolSpecs(tools: readonly ToolDefinition[] | undefined): DynamicToolSpec[] {

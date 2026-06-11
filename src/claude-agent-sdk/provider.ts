@@ -1,11 +1,6 @@
-import { fileURLToPath } from 'node:url';
-
 import type {
   AgentInfo,
   Message,
-  ModelSelection,
-  StateAction,
-  URI,
 } from '@microsoft/agent-host-protocol';
 
 import type {
@@ -16,6 +11,12 @@ import type {
   AgentTurnSink,
 } from '../types.js';
 import { ActiveClientToolsMcpBridge } from '../mcp/active-client-tools.js';
+import {
+  MarkdownTurnEmitter,
+  resolveModelId,
+  singleModelAgentInfo,
+  uriToPath,
+} from '../provider-kit.js';
 import {
   AnthropicClaudeAgentSdkClient,
   type ClaudeAgentSdkClient,
@@ -44,18 +45,12 @@ export interface ClaudeAgentSdkProviderOptions {
 export function createClaudeAgentSdkProvider(options: ClaudeAgentSdkProviderOptions = {}): AgentProvider {
   const providerId = options.providerId ?? 'claude-agent-sdk';
   const defaultModel = options.defaultModel ?? 'default';
-  const agent: AgentInfo = {
-    provider: providerId,
+  const agent: AgentInfo = singleModelAgentInfo({
+    providerId,
     displayName: options.displayName ?? 'Claude Agent SDK',
     description: options.description ?? 'Claude Agent SDK adapter',
-    models: [
-      {
-        id: defaultModel,
-        provider: providerId,
-        name: defaultModel,
-      },
-    ],
-  };
+    defaultModel,
+  });
 
   return {
     agent,
@@ -69,7 +64,7 @@ export function createClaudeAgentSdkProvider(options: ClaudeAgentSdkProviderOpti
       activeClientToolsMcpBridge.setActiveClientTools(context.activeClientTools);
       return new ClaudeAgentSdkAHPAgentSession(client, {
         cwd,
-        model: modelId(context.model, options.defaultModel),
+        model: resolveModelId(context.model, options.defaultModel),
         pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
         permissionMode: options.permissionMode ?? 'dontAsk',
         allowedTools: options.allowedTools,
@@ -109,9 +104,8 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
 
   async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
     const ahpTurnId = turnId ?? `turn-${Date.now()}`;
-    const partId = `${ahpTurnId}:markdown`;
+    const markdown = new MarkdownTurnEmitter(sink, ahpTurnId);
     const query = await this.ensureQuery();
-    let partEmitted = false;
     let emittedStreamingDelta = false;
     let emittedAnyText = false;
 
@@ -119,17 +113,8 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
       if (!content) {
         return;
       }
-      if (!partEmitted) {
-        partEmitted = true;
-        sink.emit(markdownPart(ahpTurnId, partId));
-      }
       emittedAnyText = true;
-      sink.emit({
-        type: 'session/delta',
-        turnId: ahpTurnId,
-        partId,
-        content,
-      } as StateAction);
+      markdown.emitDelta(content);
     };
 
     const interrupt = (): void => {
@@ -179,13 +164,7 @@ class ClaudeAgentSdkAHPAgentSession implements AgentSession {
           if (!emittedAnyText && sdkMessage.result) {
             emitDelta(sdkMessage.result);
           }
-          if (!partEmitted) {
-            sink.emit(markdownPart(ahpTurnId, partId));
-          }
-          sink.emit({
-            type: 'session/turnComplete',
-            turnId: ahpTurnId,
-          } as StateAction);
+          markdown.complete();
           return;
         }
       }
@@ -311,18 +290,6 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   }
 }
 
-function markdownPart(turnId: string, partId: string): StateAction {
-  return {
-    type: 'session/responsePart',
-    turnId,
-    part: {
-      kind: 'markdown',
-      id: partId,
-      content: '',
-    },
-  } as StateAction;
-}
-
 function userMessage(text: string): ClaudeAgentSdkUserMessage {
   return {
     type: 'user',
@@ -358,15 +325,4 @@ function streamEventTextDelta(event: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function modelId(model: ModelSelection | undefined, fallback: string | undefined): string | undefined {
-  return model?.id ?? fallback;
-}
-
-function uriToPath(uri: URI): string {
-  if (!uri.startsWith('file://')) {
-    return uri;
-  }
-  return fileURLToPath(uri);
 }

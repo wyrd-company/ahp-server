@@ -1,4 +1,14 @@
 export { AhpServer } from './server.js';
+export {
+  ActiveClientToolRouter,
+  MarkdownTurnEmitter,
+  markdownPart,
+  markdownPartId,
+  resolveModelId,
+  singleModelAgentInfo,
+  stringOrMarkdown,
+  uriToPath,
+} from './provider-kit.js';
 export { FileSystemSessionStore, InMemorySessionStore } from './store.js';
 export { InMemoryServerTransport, createInMemoryTransportPair } from './transport/in-memory.js';
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
@@ -20,6 +30,11 @@ export {
 } from './nats/index.js';
 export { readServerProcessConfig, startServerProcess } from './process/index.js';
 export { createPiAgentProvider, OpenAICompatiblePiAgentClient } from './pi-agent/index.js';
+export type {
+  ActiveClientToolRouterInvocation,
+  ActiveClientToolRouterOptions,
+  SingleModelAgentInfoOptions,
+} from './provider-kit.js';
 export type {
   ActiveClientToolInvocation,
   ActiveClientTools,

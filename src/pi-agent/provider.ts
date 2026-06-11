@@ -1,7 +1,6 @@
 import type {
   AgentInfo,
   Message,
-  ModelSelection,
   StringOrMarkdown,
   StateAction,
   ToolCallResult,
@@ -10,13 +9,18 @@ import type {
 } from '@microsoft/agent-host-protocol';
 
 import type {
-  ActiveClientToolSink,
   ActiveClientTools,
   AgentProvider,
   AgentSession,
   AgentSessionContext,
   AgentTurnSink,
 } from '../types.js';
+import {
+  ActiveClientToolRouter,
+  MarkdownTurnEmitter,
+  resolveModelId,
+  singleModelAgentInfo,
+} from '../provider-kit.js';
 import {
   OpenAICompatiblePiAgentClient,
   type OpenAICompatiblePiAgentClientOptions,
@@ -41,18 +45,12 @@ export interface PiAgentProviderOptions {
 
 export function createPiAgentProvider(options: PiAgentProviderOptions): AgentProvider {
   const providerId = options.providerId ?? 'pi-agent';
-  const agent: AgentInfo = {
-    provider: providerId,
+  const agent: AgentInfo = singleModelAgentInfo({
+    providerId,
     displayName: options.displayName ?? 'Pi Agent',
     description: options.description ?? 'Pi Agent OpenAI-compatible adapter',
-    models: [
-      {
-        id: options.defaultModel,
-        provider: providerId,
-        name: options.defaultModel,
-      },
-    ],
-  };
+    defaultModel: options.defaultModel,
+  });
 
   return {
     agent,
@@ -60,7 +58,7 @@ export function createPiAgentProvider(options: PiAgentProviderOptions): AgentPro
       const client = options.client ?? options.clientFactory?.() ?? createClient(options);
       return new PiAgentAHPAgentSession(
         client,
-        modelId(context.model, options.defaultModel),
+        resolveModelId(context.model, options.defaultModel),
         context.activeClientTools,
         context.activeClientToolSink,
       );
@@ -70,45 +68,37 @@ export function createPiAgentProvider(options: PiAgentProviderOptions): AgentPro
 
 class PiAgentAHPAgentSession implements AgentSession {
   private readonly messages: PiAgentChatMessage[] = [];
-  private activeClientTools: ActiveClientTools | undefined;
+  private readonly activeClientTools: ActiveClientToolRouter;
 
   constructor(
     private readonly client: PiAgentChatClient,
     private readonly model: string,
     activeClientTools: ActiveClientTools | undefined,
-    private readonly activeClientToolSink: ActiveClientToolSink,
+    activeClientToolSink: AgentSessionContext['activeClientToolSink'],
   ) {
-    this.activeClientTools = activeClientTools;
+    this.activeClientTools = new ActiveClientToolRouter({
+      activeClientTools,
+      sink: activeClientToolSink,
+    });
   }
 
   async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
     const ahpTurnId = turnId ?? `turn-${Date.now()}`;
-    const partId = `${ahpTurnId}:markdown`;
-    let partEmitted = false;
+    const markdown = new MarkdownTurnEmitter(sink, ahpTurnId);
 
     this.messages.push({ role: 'user', content: message.text });
 
     for (let attempt = 0; attempt < 16; attempt++) {
       const response = await this.runCompletionIteration({
-        turnId: ahpTurnId,
-        partId,
-        sink,
+        markdown,
         signal,
-        partEmitted,
       });
-      partEmitted = response.partEmitted;
       if (signal.aborted) {
         return;
       }
       if (response.toolCalls.length === 0) {
-        if (!partEmitted) {
-          sink.emit(markdownPart(ahpTurnId, partId));
-        }
         this.messages.push({ role: 'assistant', content: response.responseText });
-        sink.emit({
-          type: 'session/turnComplete',
-          turnId: ahpTurnId,
-        } as StateAction);
+        markdown.complete();
         return;
       }
 
@@ -135,26 +125,22 @@ class PiAgentAHPAgentSession implements AgentSession {
   }
 
   setActiveClientTools(activeClientTools: ActiveClientTools | undefined): void {
-    this.activeClientTools = activeClientTools;
+    this.activeClientTools.setActiveClientTools(activeClientTools);
   }
 
   cancel(): void {}
 
   private async runCompletionIteration(params: {
-    readonly turnId: string;
-    readonly partId: string;
-    readonly sink: AgentTurnSink;
+    readonly markdown: MarkdownTurnEmitter;
     readonly signal: AbortSignal;
-    readonly partEmitted: boolean;
-  }): Promise<{ responseText: string; toolCalls: PiAgentChatToolCall[]; partEmitted: boolean }> {
+  }): Promise<{ responseText: string; toolCalls: PiAgentChatToolCall[] }> {
     let responseText = '';
-    let partEmitted = params.partEmitted;
     const toolCalls: PiAgentChatToolCall[] = [];
 
     for await (const event of this.client.streamChatCompletion({
       model: this.model,
       messages: this.messages,
-      tools: openAiTools(this.activeClientTools?.tools),
+      tools: openAiTools(this.activeClientTools.tools),
       signal: params.signal,
     })) {
       if (params.signal.aborted) {
@@ -168,31 +154,19 @@ class PiAgentAHPAgentSession implements AgentSession {
       if (!delta) {
         continue;
       }
-      if (!partEmitted) {
-        partEmitted = true;
-        params.sink.emit(markdownPart(params.turnId, params.partId));
-      }
       responseText += delta;
-      params.sink.emit({
-        type: 'session/delta',
-        turnId: params.turnId,
-        partId: params.partId,
-        content: delta,
-      } as StateAction);
+      params.markdown.emitDelta(delta);
     }
 
-    return { responseText, toolCalls, partEmitted };
+    return { responseText, toolCalls };
   }
 
   private async invokeActiveClientTool(turnId: string, toolCall: PiAgentChatToolCall): Promise<ToolCallResult> {
     const toolName = toolCall.function.name;
-    const tool = this.activeClientTools?.tools.find(candidate => candidate.name === toolName);
-    return this.activeClientToolSink.reportInvocation({
+    return this.activeClientTools.reportInvocation({
       turnId,
       toolCallId: toolCall.id,
       toolName,
-      displayName: tool?.title ?? toolName,
-      invocationMessage: tool?.title ?? toolName,
       toolInput: toolCall.function.arguments || '{}',
     });
   }
@@ -207,22 +181,6 @@ function createClient(options: PiAgentProviderOptions): PiAgentChatClient {
     apiKey: options.apiKey,
     headers: options.headers,
   } satisfies OpenAICompatiblePiAgentClientOptions);
-}
-
-function modelId(model: ModelSelection | undefined, fallback: string): string {
-  return model?.id ?? fallback;
-}
-
-function markdownPart(turnId: string, partId: string): StateAction {
-  return {
-    type: 'session/responsePart',
-    turnId,
-    part: {
-      kind: 'markdown',
-      id: partId,
-      content: '',
-    },
-  } as StateAction;
 }
 
 function openAiTools(tools: readonly ToolDefinition[] | undefined): readonly PiAgentChatTool[] | undefined {
