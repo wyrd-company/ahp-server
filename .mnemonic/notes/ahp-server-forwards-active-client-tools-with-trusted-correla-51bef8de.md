@@ -6,9 +6,11 @@ tags:
   - tools
   - claude-agent-sdk
   - mcp
+  - pi-agent
+  - openai-compatible
 lifecycle: permanent
 createdAt: '2026-06-10T14:55:23.973Z'
-updatedAt: '2026-06-10T15:14:35.873Z'
+updatedAt: '2026-06-11T01:28:18.226Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -46,3 +48,15 @@ Key implementation details:
 - The Claude Agent SDK provider always registers that bridge as an HTTP MCP server named `activeClientTools`, preserving existing caller-supplied `mcpServers`.
 - AHP turn startup is queued instead of awaited by the JSON-RPC dispatch handler so active clients can dispatch tool completions while the provider turn is still running.
 - Validation: `npm run verify` passed. `test/claude-agent-sdk-provider.test.ts` uses the official MCP client over Streamable HTTP to list the registered active-client tool, call it, observe AHP `toolCallStart`/`toolCallReady`, complete it via AHP, and receive the MCP tool result.
+
+## Pi Agent OpenAI Tool-Call Provider Bridge
+
+On 2026-06-11, `ahp-server` commit `f7ffd28` wired active-client tools into the Pi Agent provider through OpenAI-compatible Chat Completions tool calls.
+
+Key implementation details:
+
+- `PiAgentChatMessage` now supports assistant `tool_calls` and OpenAI `tool` result messages.
+- `PiAgentStreamCompletionParams` now supports OpenAI-compatible `tools` derived from AHP `ToolDefinition` values.
+- `OpenAICompatiblePiAgentClient` parses streamed `delta.tool_calls` chunks, accumulates function names and JSON argument strings, and emits completed tool-call events after the stream ends.
+- The Pi provider loops chat completions: it sends active-client tools, forwards model tool calls through `activeClientToolSink.reportInvocation(...)`, appends returned AHP tool results as OpenAI `tool` messages, then continues until the model emits final text.
+- Validation: `npm run verify` passed. `npm run test:live:pi` also passed with the repo `.env` OpenAI-compatible provider configuration. `test/pi-agent-provider.test.ts` covers model `tool_calls`, trusted AHP turn correlation despite forged tool arguments, AHP client completion, OpenAI `tool` result continuation, and final assistant output.
