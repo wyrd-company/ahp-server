@@ -1,16 +1,61 @@
-export interface PiAgentChatMessage {
-  readonly role: 'system' | 'user' | 'assistant';
-  readonly content: string;
+export type PiAgentChatMessage =
+  | {
+    readonly role: 'system' | 'user';
+    readonly content: string;
+  }
+  | {
+    readonly role: 'assistant';
+    readonly content: string | null;
+    readonly tool_calls?: readonly PiAgentChatToolCall[];
+  }
+  | {
+    readonly role: 'tool';
+    readonly tool_call_id: string;
+    readonly content: string;
+  };
+
+export interface PiAgentChatTool {
+  readonly type: 'function';
+  readonly function: {
+    readonly name: string;
+    readonly description?: string;
+    readonly parameters: {
+      readonly type: 'object';
+      readonly properties?: Record<string, object>;
+      readonly required?: string[];
+    };
+  };
+}
+
+export interface PiAgentChatToolCall {
+  readonly id: string;
+  readonly type: 'function';
+  readonly function: {
+    readonly name: string;
+    readonly arguments: string;
+  };
 }
 
 export interface PiAgentStreamCompletionParams {
   readonly model: string;
   readonly messages: readonly PiAgentChatMessage[];
+  readonly tools?: readonly PiAgentChatTool[];
   readonly signal?: AbortSignal;
 }
 
+export type PiAgentChatStreamEvent =
+  | string
+  | {
+    readonly type: 'text';
+    readonly content: string;
+  }
+  | {
+    readonly type: 'toolCall';
+    readonly toolCall: PiAgentChatToolCall;
+  };
+
 export interface PiAgentChatClient {
-  streamChatCompletion(params: PiAgentStreamCompletionParams): AsyncIterable<string>;
+  streamChatCompletion(params: PiAgentStreamCompletionParams): AsyncIterable<PiAgentChatStreamEvent>;
 }
 
 export interface OpenAICompatiblePiAgentClientOptions {
@@ -24,6 +69,15 @@ interface ChatCompletionChunk {
   readonly choices?: ReadonlyArray<{
     readonly delta?: {
       readonly content?: string | null;
+      readonly tool_calls?: ReadonlyArray<{
+        readonly index?: number;
+        readonly id?: string;
+        readonly type?: 'function';
+        readonly function?: {
+          readonly name?: string;
+          readonly arguments?: string;
+        };
+      }>;
     };
   }>;
   readonly error?: {
@@ -38,7 +92,7 @@ export class OpenAICompatiblePiAgentClient implements PiAgentChatClient {
     this.fetchFn = options.fetchFn ?? fetch;
   }
 
-  async *streamChatCompletion(params: PiAgentStreamCompletionParams): AsyncIterable<string> {
+  async *streamChatCompletion(params: PiAgentStreamCompletionParams): AsyncIterable<PiAgentChatStreamEvent> {
     const response = await this.fetchFn(chatCompletionsUrl(this.options.baseUrl), {
       method: 'POST',
       headers: {
@@ -50,6 +104,7 @@ export class OpenAICompatiblePiAgentClient implements PiAgentChatClient {
       body: JSON.stringify({
         model: params.model,
         messages: params.messages,
+        ...(params.tools ? { tools: params.tools } : {}),
         stream: true,
       }),
       signal: params.signal,
@@ -66,10 +121,11 @@ export class OpenAICompatiblePiAgentClient implements PiAgentChatClient {
   }
 }
 
-async function* parseServerSentEvents(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
+async function* parseServerSentEvents(body: ReadableStream<Uint8Array>): AsyncIterable<PiAgentChatStreamEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const toolCalls = new Map<number, MutableToolCall>();
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -92,15 +148,58 @@ async function* parseServerSentEvents(body: ReadableStream<Uint8Array>): AsyncIt
         if (parsed.error?.message) {
           throw new Error(parsed.error.message);
         }
-        const content = parsed.choices?.[0]?.delta?.content;
+        const delta = parsed.choices?.[0]?.delta;
+        const content = delta?.content;
         if (content) {
           yield content;
+        }
+        if (delta?.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            const index = toolCall.index ?? toolCalls.size;
+            const current = toolCalls.get(index) ?? {
+              id: '',
+              name: '',
+              arguments: '',
+            };
+            if (toolCall.id) {
+              current.id = toolCall.id;
+            }
+            if (toolCall.function?.name) {
+              current.name = toolCall.function.name;
+            }
+            if (toolCall.function?.arguments) {
+              current.arguments += toolCall.function.arguments;
+            }
+            toolCalls.set(index, current);
+          }
         }
       }
     }
   } finally {
     reader.releaseLock();
   }
+  for (const [index, toolCall] of toolCalls.entries()) {
+    if (!toolCall.name) {
+      continue;
+    }
+    yield {
+      type: 'toolCall',
+      toolCall: {
+        id: toolCall.id || `tool-call-${index}`,
+        type: 'function',
+        function: {
+          name: toolCall.name,
+          arguments: toolCall.arguments || '{}',
+        },
+      },
+    };
+  }
+}
+
+interface MutableToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
 function trimTrailingSlash(value: string): string {

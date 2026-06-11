@@ -14,7 +14,7 @@ This repository currently contains the first vertical-slice implementation:
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
-- A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints.
+- A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints and exposes active-client tools through OpenAI-compatible tool calls.
 - A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions and exposes active-client tools through a local Streamable HTTP MCP bridge.
 - File-backed AHP `resource*` commands constrained to configured local roots.
 - Transport adapters provided by sibling packages, with TypeScript as the first implementation:
@@ -91,6 +91,7 @@ The server supports active-client tools as a provider-agnostic capability:
 - The server owns trusted correlation for session URI, turn id, tool call id, tool name, and owning client id. Tool input is not trusted for those fields.
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
 - The Claude Agent SDK provider registers those tools with Claude through a per-session local Streamable HTTP MCP server named `activeClientTools`.
+- The Pi Agent provider sends those tools as OpenAI-compatible `tools`, forwards model `tool_calls` through AHP, and continues the chat-completions loop with OpenAI `tool` result messages.
 
 ## Codex App Server Adapter
 

@@ -73,6 +73,9 @@ export type {
   OpenAICompatiblePiAgentClientOptions,
   PiAgentChatClient,
   PiAgentChatMessage,
+  PiAgentChatStreamEvent,
+  PiAgentChatTool,
+  PiAgentChatToolCall,
   PiAgentProviderOptions,
   PiAgentStreamCompletionParams,
 } from './pi-agent/index.js';
