@@ -36,7 +36,7 @@ test('Claude Agent SDK provider streams SDK messages as AHP actions', async () =
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'test-client', protocolVersions: ['0.3.0'] });
 
@@ -81,7 +81,7 @@ test('Claude Agent SDK provider exposes active-client tools through Streamable H
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'owner-client', protocolVersions: ['0.3.0'] });
 

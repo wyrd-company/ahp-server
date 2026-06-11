@@ -1,4 +1,8 @@
-import type { JsonRpcError } from './types.js';
+interface JsonRpcErrorObject {
+  readonly code: number;
+  readonly message: string;
+  readonly data?: unknown;
+}
 
 export const JsonRpcErrorCodes = {
   ParseError: -32700,
@@ -26,14 +30,14 @@ export class AhpServerError extends Error {
     this.data = data;
   }
 
-  toJsonRpcError(): JsonRpcError {
+  toJsonRpcError(): JsonRpcErrorObject {
     return this.data === undefined
       ? { code: this.code, message: this.message }
       : { code: this.code, message: this.message, data: this.data };
   }
 }
 
-export function toJsonRpcError(error: unknown): JsonRpcError {
+export function toJsonRpcError(error: unknown): JsonRpcErrorObject {
   if (error instanceof AhpServerError) {
     return error.toJsonRpcError();
   }

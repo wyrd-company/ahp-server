@@ -50,6 +50,7 @@ import type {
   ServerTransport,
   SessionStore,
   StoredSession,
+  TransportFrame,
 } from './types.js';
 
 interface ClientConnection {
@@ -95,6 +96,7 @@ export class AhpServer {
   private readonly store: SessionStore;
   private readonly supportedProtocolVersions: string[];
   private readonly resources: FileResourceService;
+  private readonly textDecoder = new TextDecoder();
   private readonly connections = new Set<ClientConnection>();
   private readonly activeClientToolCalls = new Map<string, ActiveClientToolCallRecord>();
   private serverSeq = 0;
@@ -136,12 +138,18 @@ export class AhpServer {
     }
   }
 
-  private decode(message: JsonRpcMessage | string): JsonRpcMessage {
-    if (typeof message !== 'string') {
-      return message;
+  private decode(frame: TransportFrame): JsonRpcMessage {
+    if (frame.kind === 'parsed') {
+      return frame.message as JsonRpcMessage;
     }
-    const parsed = JSON.parse(message) as JsonRpcMessage;
-    return parsed;
+    if (frame.kind === 'binary') {
+      return this.decodeText(this.textDecoder.decode(frame.data));
+    }
+    return this.decodeText(frame.text);
+  }
+
+  private decodeText(text: string): JsonRpcMessage {
+    return JSON.parse(text) as JsonRpcMessage;
   }
 
   private async handleMessage(connection: ClientConnection, message: JsonRpcMessage): Promise<void> {

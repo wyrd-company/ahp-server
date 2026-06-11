@@ -27,7 +27,7 @@ test('Codex provider maps an AHP turn to CAS thread and turn requests', async ()
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'test-client', protocolVersions: ['0.3.0'] });
 
@@ -96,7 +96,7 @@ test('Codex provider routes dynamic tool calls through active-client tools', asy
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'tool-owner', protocolVersions: ['0.3.0'] });
 

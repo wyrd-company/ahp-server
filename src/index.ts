@@ -39,18 +39,21 @@ export type {
   ActiveClientToolInvocation,
   ActiveClientTools,
   ActiveClientToolSink,
+  AhpTransport,
   AgentProvider,
   AgentSession,
   AgentSessionContext,
   AgentTurnSink,
   AhpServerOptions,
-  JsonRpcError,
+  JsonRpcErrorResponse,
   JsonRpcMessage,
   JsonRpcNotification,
   JsonRpcRequest,
   JsonRpcResponse,
+  JsonRpcSuccessResponse,
   ServerTransport,
   SessionStore,
+  TransportFrame,
 } from './types.js';
 export type { FileSystemSessionStoreOptions } from './store.js';
 export type {

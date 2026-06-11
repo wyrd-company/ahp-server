@@ -29,7 +29,7 @@ test('streams a live Claude Agent SDK turn through AHP', {
   });
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   const serverRun = server.accept(serverTransport);
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 10_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 10_000 });
   let sessionUri: string | undefined;
 
   try {

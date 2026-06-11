@@ -20,7 +20,7 @@ test('serves the minimal AHP session flow to the TypeScript client', async () =>
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
 
   const init = await client.initialize({
@@ -79,7 +79,7 @@ test('returns listSessions and fetchTurns results', async () => {
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'test-client', protocolVersions: ['0.3.0'] });
 
@@ -117,7 +117,7 @@ test('returns createSession errors when provider startup fails', async () => {
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
 
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   client.connect();
   await client.initialize({ clientId: 'test-client', protocolVersions: ['0.3.0'] });
 

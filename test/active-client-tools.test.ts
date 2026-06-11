@@ -183,7 +183,7 @@ class FakeActiveToolSession implements AgentSession {
 function createClient(server: AhpServer): { client: AhpClient } {
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
   runningServers.push(server.accept(serverTransport));
-  const client = new AhpClient(asAhpTransport(clientTransport), { requestTimeoutMs: 1_000 });
+  const client = new AhpClient(clientTransport, { requestTimeoutMs: 1_000 });
   return { client };
 }
 

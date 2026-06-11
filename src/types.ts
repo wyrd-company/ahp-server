@@ -12,41 +12,29 @@ import type {
   ToolCallResult,
   ToolDefinition,
   URI,
+  JsonRpcErrorResponse,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcSuccessResponse,
 } from '@microsoft/agent-host-protocol';
+import type {
+  AhpTransport,
+  JsonRpcMessage,
+  TransportFrame,
+} from '@microsoft/agent-host-protocol/client';
 
-export interface JsonRpcRequest {
-  readonly jsonrpc: '2.0';
-  readonly id: number | string;
-  readonly method: string;
-  readonly params?: unknown;
-}
-
-export interface JsonRpcNotification {
-  readonly jsonrpc: '2.0';
-  readonly method: string;
-  readonly params?: unknown;
-}
-
-export interface JsonRpcResponse {
-  readonly jsonrpc: '2.0';
-  readonly id: number | string;
-  readonly result?: unknown;
-  readonly error?: JsonRpcError;
-}
-
-export interface JsonRpcError {
-  readonly code: number;
-  readonly message: string;
-  readonly data?: unknown;
-}
-
-export type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
-
-export interface ServerTransport {
-  send(message: JsonRpcMessage | string): Promise<void> | void;
-  recv(): Promise<JsonRpcMessage | string | null>;
-  close(): Promise<void> | void;
-}
+export type {
+  AhpTransport,
+  JsonRpcErrorResponse,
+  JsonRpcMessage,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcSuccessResponse,
+  TransportFrame,
+};
+export type ServerTransport = AhpTransport;
 
 export interface AgentTurnSink {
   emit(action: StateAction): void;
