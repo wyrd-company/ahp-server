@@ -8,9 +8,11 @@ tags:
   - mcp
   - pi-agent
   - openai-compatible
+  - codex
+  - codex-app-server
 lifecycle: permanent
 createdAt: '2026-06-10T14:55:23.973Z'
-updatedAt: '2026-06-11T01:28:18.226Z'
+updatedAt: '2026-06-11T01:40:37.918Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -60,3 +62,16 @@ Key implementation details:
 - `OpenAICompatiblePiAgentClient` parses streamed `delta.tool_calls` chunks, accumulates function names and JSON argument strings, and emits completed tool-call events after the stream ends.
 - The Pi provider loops chat completions: it sends active-client tools, forwards model tool calls through `activeClientToolSink.reportInvocation(...)`, appends returned AHP tool results as OpenAI `tool` messages, then continues until the model emits final text.
 - Validation: `npm run verify` passed. `npm run test:live:pi` also passed with the repo `.env` OpenAI-compatible provider configuration. `test/pi-agent-provider.test.ts` covers model `tool_calls`, trusted AHP turn correlation despite forged tool arguments, AHP client completion, OpenAI `tool` result continuation, and final assistant output.
+
+## Codex App Server Dynamic Tool Provider Bridge
+
+On 2026-06-11, `ahp-server` commit `33849b0` wired active-client tools into the Codex App Server provider through CAS experimental dynamic tools.
+
+Key implementation details:
+
+- The provider converts the active client's initial AHP `ToolDefinition` values into CAS `dynamicTools` on `thread/start` under namespace `ahp_active_client`.
+- `CodexAppServerSocketClient` server-to-client JSON-RPC request events now expose `respond(...)` and `reject(...)`, so handled CAS requests no longer fall through to method-not-found.
+- During an AHP turn, CAS `item/tool/call` requests are routed through `ActiveClientToolSink.reportInvocation(...)` using the server-owned AHP turn id and CAS `callId` as the AHP tool call id.
+- AHP tool results are converted back into CAS `DynamicToolCallResponse` content items, including text and image content where representable.
+- `AgentSession.setActiveClientTools(...)` keeps the adapter's local validation view current, but CAS currently only accepts `dynamicTools` at `thread/start`; post-creation tool additions are not model-visible until CAS exposes a live dynamic-tool update API.
+- Validation: `npm run verify` passed. `test/codex-provider.test.ts` covers CAS dynamic tool registration, trusted AHP tool lifecycle emissions, active-client completion, and CAS response conversion. `test/codex-rpc-client.test.ts` exercises the real WebSocket request-response path for handled CAS server requests.
