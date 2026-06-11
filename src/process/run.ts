@@ -1,4 +1,4 @@
-import { connect, type NatsConnection } from 'nats';
+import { connect, type NatsConnection } from '@nats-io/transport-node';
 import { NatsServerTransport, ahpNatsSubjects } from '@wyrd-company/ahp-nats';
 import { createGrpcUdsServer, type AhpGrpcUdsServer } from '@wyrd-company/ahp-grpc';
 

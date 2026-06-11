@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
-import { connect } from 'nats';
+import { connect } from '@nats-io/transport-node';
 import type { AgentInfo, Message, StateAction } from '@microsoft/agent-host-protocol';
 
 import {

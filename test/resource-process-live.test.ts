@@ -8,7 +8,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
-import { connect } from 'nats';
+import { connect } from '@nats-io/transport-node';
 import type { ContentEncoding } from '@microsoft/agent-host-protocol';
 
 import {

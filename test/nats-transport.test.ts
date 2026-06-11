@@ -67,6 +67,10 @@ class FakeNatsBroker implements NatsConnectionLike {
     }
   }
 
+  request(): Promise<never> {
+    return Promise.reject(new Error('FakeNatsBroker request is not implemented'));
+  }
+
   subscribe(subject: string): FakeSubscription {
     const subscription = new FakeSubscription(() => {
       this.subscriptions.get(subject)?.delete(subscription);
@@ -157,4 +161,3 @@ function createNoopProvider(): AgentProvider {
     },
   };
 }
-

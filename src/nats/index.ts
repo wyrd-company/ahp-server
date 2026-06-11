@@ -13,4 +13,6 @@ export type {
   AhpNatsTransportOptions,
   MsgLike,
   NatsConnectionLike,
+  NatsMsgLike,
+  NatsRequestOptions,
 } from '@wyrd-company/ahp-nats';
