@@ -4,11 +4,17 @@ import type {
   AgentInfo,
   Message,
   ModelSelection,
+  StringOrMarkdown,
   StateAction,
+  ToolCallResult,
+  ToolDefinition,
+  ToolResultContent,
   URI,
 } from '@microsoft/agent-host-protocol';
 
 import type {
+  ActiveClientToolSink,
+  ActiveClientTools,
   AgentProvider,
   AgentSession,
   AgentSessionContext,
@@ -18,6 +24,7 @@ import {
   CodexAppServerSocketClient,
   type CodexAppServerClient,
   type CodexJsonRpcNotification,
+  type CodexServerRequestEvent,
 } from './rpc-client.js';
 
 export interface CodexAppServerProviderOptions {
@@ -40,6 +47,34 @@ interface ThreadStartResponse {
 interface TurnStartResponse {
   readonly turn: { readonly id: string };
 }
+
+interface DynamicToolSpec {
+  readonly namespace?: string | null;
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: unknown;
+  readonly deferLoading?: boolean;
+}
+
+interface DynamicToolCallParams {
+  readonly threadId: string;
+  readonly turnId: string;
+  readonly callId: string;
+  readonly namespace?: string | null;
+  readonly tool: string;
+  readonly arguments?: unknown;
+}
+
+interface DynamicToolCallResponse {
+  readonly contentItems: DynamicToolCallOutputContentItem[];
+  readonly success: boolean;
+}
+
+type DynamicToolCallOutputContentItem =
+  | { readonly type: 'inputText'; readonly text: string }
+  | { readonly type: 'inputImage'; readonly imageUrl: string };
+
+const ACTIVE_CLIENT_TOOL_NAMESPACE = 'ahp_active_client';
 
 export function createCodexAppServerProvider(options: CodexAppServerProviderOptions): AgentProvider {
   const providerId = options.providerId ?? 'codex';
@@ -64,6 +99,7 @@ export function createCodexAppServerProvider(options: CodexAppServerProviderOpti
       await client.connect();
       const cwd = context.workingDirectory ? uriToPath(context.workingDirectory) : process.cwd();
       const model = modelId(context.model, defaultModel);
+      const dynamicTools = toDynamicToolSpecs(context.activeClientTools?.tools);
       const start = await client.request<ThreadStartResponse>('thread/start', {
         cwd,
         model,
@@ -72,8 +108,15 @@ export function createCodexAppServerProvider(options: CodexAppServerProviderOpti
         ephemeral: false,
         sessionStartSource: 'startup',
         threadSource: 'user',
+        ...(dynamicTools.length ? { dynamicTools } : {}),
       });
-      return new CodexAHPAgentSession(client, start.thread.id, model);
+      return new CodexAHPAgentSession(
+        client,
+        start.thread.id,
+        model,
+        context.activeClientTools,
+        context.activeClientToolSink,
+      );
     },
   };
 }
@@ -91,11 +134,17 @@ function createSocketClient(options: CodexAppServerProviderOptions): CodexAppSer
 }
 
 class CodexAHPAgentSession implements AgentSession {
+  private activeClientTools: ActiveClientTools | undefined;
+
   constructor(
     private readonly client: CodexAppServerClient,
     private readonly threadId: string,
     private readonly model: string,
-  ) {}
+    activeClientTools: ActiveClientTools | undefined,
+    private readonly activeClientToolSink: ActiveClientToolSink,
+  ) {
+    this.activeClientTools = activeClientTools;
+  }
 
   async sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void> {
     const ahpTurnId = turnId ?? `turn-${Date.now()}`;
@@ -155,6 +204,12 @@ class CodexAHPAgentSession implements AgentSession {
         fail?.(error instanceof Error ? error : new Error(String(error)));
       }
     });
+    const unsubscribeServerRequests = this.client.onServerRequest(request => {
+      if (request.method !== 'item/tool/call') {
+        return;
+      }
+      request.respond(this.handleDynamicToolCall(ahpTurnId, request));
+    });
 
     try {
       const response = await this.client.request<TurnStartResponse>('turn/start', {
@@ -170,7 +225,12 @@ class CodexAHPAgentSession implements AgentSession {
       await done;
     } finally {
       unsubscribe();
+      unsubscribeServerRequests();
     }
+  }
+
+  setActiveClientTools(activeClientTools: ActiveClientTools | undefined): void {
+    this.activeClientTools = activeClientTools;
   }
 
   async cancel(reason?: string): Promise<void> {
@@ -182,6 +242,35 @@ class CodexAHPAgentSession implements AgentSession {
 
   async dispose(): Promise<void> {
     await this.client.close();
+  }
+
+  private async handleDynamicToolCall(ahpTurnId: string, request: CodexServerRequestEvent): Promise<DynamicToolCallResponse> {
+    const params = request.params as DynamicToolCallParams;
+    if (params.threadId !== this.threadId) {
+      throw new Error(`Codex dynamic tool call targeted unexpected thread ${params.threadId}`);
+    }
+    if (params.namespace && params.namespace !== ACTIVE_CLIENT_TOOL_NAMESPACE) {
+      throw new Error(`Codex dynamic tool namespace is not handled by this adapter: ${params.namespace}`);
+    }
+
+    const tool = this.activeClientTools?.tools.find(candidate => candidate.name === params.tool);
+    if (!tool) {
+      return dynamicToolErrorResponse(`Active-client tool is not available: ${params.tool}`);
+    }
+
+    try {
+      const result = await this.activeClientToolSink.reportInvocation({
+        turnId: ahpTurnId,
+        toolCallId: params.callId,
+        toolName: params.tool,
+        displayName: tool.title ?? tool.name,
+        invocationMessage: tool.title ?? tool.name,
+        toolInput: JSON.stringify(params.arguments ?? {}),
+      });
+      return toDynamicToolCallResponse(result);
+    } catch (error) {
+      return dynamicToolErrorResponse(error instanceof Error ? error.message : String(error));
+    }
   }
 }
 
@@ -215,4 +304,60 @@ function uriToPath(uri: URI): string {
     return uri;
   }
   return fileURLToPath(uri);
+}
+
+function toDynamicToolSpecs(tools: readonly ToolDefinition[] | undefined): DynamicToolSpec[] {
+  return tools?.map(tool => ({
+    namespace: ACTIVE_CLIENT_TOOL_NAMESPACE,
+    name: tool.name,
+    description: tool.description ?? tool.title ?? tool.name,
+    inputSchema: tool.inputSchema ?? { type: 'object' },
+  })) ?? [];
+}
+
+function toDynamicToolCallResponse(result: ToolCallResult): DynamicToolCallResponse {
+  return {
+    success: result.success,
+    contentItems: result.content?.flatMap(toDynamicToolContentItem) ?? [{
+      type: 'inputText',
+      text: toolResultFallbackText(result),
+    }],
+  };
+}
+
+function toDynamicToolContentItem(content: ToolResultContent): DynamicToolCallOutputContentItem[] {
+  if (content.type === 'text') {
+    return [{ type: 'inputText', text: content.text }];
+  }
+  if (content.type === 'embeddedResource' && content.contentType.startsWith('image/')) {
+    return [{
+      type: 'inputImage',
+      imageUrl: `data:${content.contentType};base64,${content.data}`,
+    }];
+  }
+  if (content.type === 'resource' && content.contentType?.startsWith('image/')) {
+    return [{ type: 'inputImage', imageUrl: content.uri }];
+  }
+  return [{ type: 'inputText', text: JSON.stringify(content) }];
+}
+
+function toolResultFallbackText(result: ToolCallResult): string {
+  if (result.structuredContent) {
+    return JSON.stringify(result.structuredContent);
+  }
+  if (result.error?.message) {
+    return result.error.message;
+  }
+  return stringOrMarkdown(result.pastTenseMessage);
+}
+
+function dynamicToolErrorResponse(message: string): DynamicToolCallResponse {
+  return {
+    success: false,
+    contentItems: [{ type: 'inputText', text: message }],
+  };
+}
+
+function stringOrMarkdown(value: StringOrMarkdown): string {
+  return typeof value === 'string' ? value : value.markdown;
 }

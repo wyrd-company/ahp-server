@@ -92,6 +92,7 @@ The server supports active-client tools as a provider-agnostic capability:
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
 - The Claude Agent SDK provider registers those tools with Claude through a per-session local Streamable HTTP MCP server named `activeClientTools`.
 - The Pi Agent provider sends those tools as OpenAI-compatible `tools`, forwards model `tool_calls` through AHP, and continues the chat-completions loop with OpenAI `tool` result messages.
+- The Codex App Server provider registers the initial active-client tool set as experimental CAS `dynamicTools` on `thread/start`, routes CAS `item/tool/call` server requests through AHP, and returns the owning client's result as a CAS dynamic tool response.
 
 ## Codex App Server Adapter
 
@@ -103,10 +104,14 @@ The adapter:
 - Can also connect to a CAS WebSocket URL for validation and non-target local deployments.
 - Sends `initialize`, then `initialized`.
 - Creates a CAS thread for each AHP session via `thread/start`.
+- Seeds active-client tools as experimental CAS `dynamicTools` when the AHP session is created.
 - Sends user turns via `turn/start`.
 - Maps `item/agentMessage/delta` to AHP markdown response parts and deltas.
+- Maps CAS `item/tool/call` server requests to the AHP `session/toolCallStart` / `session/toolCallReady` / `session/toolCallComplete` lifecycle using server-owned session and turn correlation.
 - Maps `turn/completed` to `session/turnComplete`.
 - Responds to unknown CAS server requests with method-not-found.
+
+CAS currently accepts `dynamicTools` at `thread/start`; the adapter keeps its local active-client tool view current for invocation validation, but newly-added tools after CAS thread creation are not model-visible until CAS offers a live dynamic-tool update API.
 
 When starting CAS over a Unix socket, place the socket under a private directory such as `/tmp/ahp-cas` with mode `700`. Codex secures the socket parent directory and will fail if asked to use a shared directory directly, such as `unix:///tmp/app-server-control.sock`.
 

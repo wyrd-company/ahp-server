@@ -38,6 +38,8 @@ export interface CodexServerRequestEvent {
   readonly id: number | string;
   readonly method: string;
   readonly params?: unknown;
+  respond(result: unknown | Promise<unknown>): void;
+  reject(error: Error | { readonly code?: number; readonly message: string; readonly data?: unknown }): void;
 }
 
 export interface CodexAppServerClient {
@@ -166,7 +168,7 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
     return this.options.socketPath ?? this.options.webSocketUrl ?? '(no endpoint configured)';
   }
 
-  private send(message: CodexJsonRpcRequest | CodexJsonRpcNotification): void {
+  private send(message: CodexJsonRpcMessage): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('Codex App Server socket is not open');
     }
@@ -193,11 +195,34 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
       return;
     }
     if ('id' in message && 'method' in message) {
+      let handled = false;
+      const respond = (result: unknown | Promise<unknown>): void => {
+        handled = true;
+        void Promise.resolve(result).then(
+          value => this.send({ id: message.id, result: value }),
+          error => this.send({
+            id: message.id,
+            error: jsonRpcError(-32_603, error),
+          }),
+        );
+      };
+      const reject = (error: Error | { readonly code?: number; readonly message: string; readonly data?: unknown }): void => {
+        handled = true;
+        this.send({
+          id: message.id,
+          error: jsonRpcError('code' in error && error.code !== undefined ? error.code : -32_603, error),
+        });
+      };
       this.events.emit('serverRequest', {
         id: message.id,
         method: message.method,
         params: message.params,
+        respond,
+        reject,
       } satisfies CodexServerRequestEvent);
+      if (handled) {
+        return;
+      }
       this.send({
         id: message.id,
         error: {
@@ -216,4 +241,19 @@ export class CodexAppServerSocketClient implements CodexAppServerClient {
       pending.reject(error);
     }
   }
+}
+
+function jsonRpcError(code: number, error: unknown): CodexJsonRpcFailure['error'] {
+  if (error instanceof Error) {
+    return { code, message: error.message };
+  }
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const value = error as { readonly message?: unknown; readonly data?: unknown };
+    return {
+      code,
+      message: typeof value.message === 'string' ? value.message : String(value.message),
+      ...(value.data !== undefined ? { data: value.data } : {}),
+    };
+  }
+  return { code, message: String(error) };
 }
