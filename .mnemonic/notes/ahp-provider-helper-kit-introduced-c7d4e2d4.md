@@ -4,14 +4,11 @@ tags:
   - ahp
   - adapters
   - provider-abstraction
-  - active-client-tools
-  - cursor-sdk
-  - claude-agent-sdk
-  - pi-agent
+  - provider-kit
   - codex-app-server
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-11T02:31:46.134Z'
+updatedAt: '2026-06-12T23:59:13.300Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -31,4 +28,9 @@ Built-in Codex App Server, Pi Agent, and Claude Agent SDK providers now use the 
 
 The external `ahp-cursor-sdk` package consumes the helper kit through the public `@wyrd-company/ahp-server` root export in commit `1017d04`, proving optional provider packages can share this abstraction across the package boundary.
 
-Validation: `npm run verify` passed in both `ahp-server` and `ahp-cursor-sdk`. Live Cursor SDK execution remains blocked by the upstream Cursor SDK local-agent validation bug, not by the abstraction.
+Validation: `npm run verify` passed in both `ahp-server` and `ahp-cursor-sdk`. Live Cursor SDK execution remains blocked by the upstream Cursor SDK local-agent validation bug, not by the abstraction.## Extracted to Shared PackageOn 2026-06-12, the provider helper kit was extracted from `ahp-server` into the sibling repo `/workspaces/agent-control-plane/ahp-provider-kit` as package `@wyrd-company/ahp-provider-kit`.Commits:* `ahp-provider-kit` `31ee407` adds the shared provider/session contract and helper utilities.
+
+- `ahp-codex-app-server` `b729b86` adds the extracted Codex App Server provider package, depending on `@wyrd-company/ahp-provider-kit`.
+- `ahp-server` `bfe4546` re-exports the extracted Codex package for compatibility and re-exports provider-kit through its existing `provider-kit` subpath.The extraction avoids a circular dependency by making providers depend on `@wyrd-company/ahp-provider-kit` rather than `@wyrd-company/ahp-server`. `ahp-server` can then depend on extracted provider packages for compatibility/process wiring without those providers depending back on the server package.Validation run:* `ahp-provider-kit`: `npm run verify` passed.
+- `ahp-codex-app-server`: `npm run verify` passed; live CAS validation skipped without `CODEX_APP_SERVER_URL` or `CODEX_APP_SERVER_SOCKET`.
+- `ahp-server`: `npm run verify` passed; local tests passed and live tests skipped where environment variables were absent.
