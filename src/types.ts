@@ -1,16 +1,7 @@
 import type {
-  AgentInfo,
-  ActionEnvelope,
-  Message,
-  ModelSelection,
   RootState,
-  SessionConfigSchema,
-  StringOrMarkdown,
   SessionState,
   SessionSummary,
-  StateAction,
-  ToolCallResult,
-  ToolDefinition,
   URI,
   JsonRpcErrorResponse,
   JsonRpcNotification,
@@ -23,7 +14,20 @@ import type {
   JsonRpcMessage,
   TransportFrame,
 } from '@microsoft/agent-host-protocol/client';
+import type {
+  AgentProvider,
+  AgentSession,
+} from '@wyrd-company/ahp-provider-kit';
 
+export type {
+  ActiveClientToolInvocation,
+  ActiveClientToolSink,
+  ActiveClientTools,
+  AgentProvider,
+  AgentSession,
+  AgentSessionContext,
+  AgentTurnSink,
+} from '@wyrd-company/ahp-provider-kit';
 export type {
   AhpTransport,
   JsonRpcErrorResponse,
@@ -35,58 +39,6 @@ export type {
   TransportFrame,
 };
 export type ServerTransport = AhpTransport;
-
-export interface AgentTurnSink {
-  emit(action: StateAction): void;
-  fail(error: Error): void;
-}
-
-export interface ActiveClientTools {
-  readonly clientId: string;
-  readonly tools: readonly ToolDefinition[];
-}
-
-export interface ActiveClientToolInvocation {
-  readonly turnId: string;
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly displayName?: string;
-  readonly invocationMessage?: StringOrMarkdown;
-  readonly toolInput?: string;
-  readonly _meta?: Record<string, unknown>;
-}
-
-export interface ActiveClientToolSink {
-  reportInvocation(invocation: ActiveClientToolInvocation): Promise<ToolCallResult>;
-}
-
-export interface AgentSessionContext {
-  readonly sessionUri: URI;
-  readonly providerId: string;
-  readonly workingDirectory?: URI;
-  readonly model?: ModelSelection;
-  readonly config?: Record<string, unknown>;
-  readonly activeClientId?: string;
-  readonly activeClientTools?: ActiveClientTools;
-  readonly activeClientToolSink: ActiveClientToolSink;
-}
-
-export interface AgentSession {
-  sendUserMessage(message: Message, sink: AgentTurnSink, signal: AbortSignal, turnId?: string): Promise<void>;
-  setActiveClientTools?(activeClientTools: ActiveClientTools | undefined): Promise<void> | void;
-  cancel?(reason?: string): Promise<void> | void;
-  dispose?(): Promise<void> | void;
-}
-
-export interface AgentProvider {
-  readonly agent: AgentInfo;
-  resolveSessionConfig?(params: {
-    workingDirectory?: URI;
-    config?: Record<string, unknown>;
-  }): Promise<{ schema: SessionConfigSchema; values: Record<string, unknown> }> |
-    { schema: SessionConfigSchema; values: Record<string, unknown> };
-  createSession(context: AgentSessionContext): Promise<AgentSession> | AgentSession;
-}
 
 export interface StoredSession {
   readonly uri: URI;

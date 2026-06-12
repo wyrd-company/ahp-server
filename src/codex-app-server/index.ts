@@ -8,9 +8,8 @@ export {
   type CodexJsonRpcSuccess,
   type CodexJsonRpcFailure,
   type CodexServerRequestEvent,
-} from './rpc-client.js';
+} from '@wyrd-company/ahp-codex-app-server';
 export {
   createCodexAppServerProvider,
   type CodexAppServerProviderOptions,
-} from './provider.js';
-
+} from '@wyrd-company/ahp-codex-app-server';

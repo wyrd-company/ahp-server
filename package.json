@@ -47,6 +47,10 @@
     "./pi-agent": {
       "import": "./dist/src/pi-agent/index.js",
       "types": "./dist/src/pi-agent/index.d.ts"
+    },
+    "./provider-kit": {
+      "import": "./dist/src/provider-kit.js",
+      "types": "./dist/src/provider-kit.d.ts"
     }
   },
   "scripts": {
@@ -66,8 +70,10 @@
     "@microsoft/agent-host-protocol": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nats-io/transport-node": "^3.4.0",
+    "@wyrd-company/ahp-codex-app-server": "file:../ahp-codex-app-server",
     "@wyrd-company/ahp-grpc": "file:../ahp-grpc",
     "@wyrd-company/ahp-nats": "file:../ahp-nats",
+    "@wyrd-company/ahp-provider-kit": "file:../ahp-provider-kit",
     "ws": "^8.18.0"
   },
   "devDependencies": {
