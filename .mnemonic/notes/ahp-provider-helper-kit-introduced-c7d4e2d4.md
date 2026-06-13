@@ -12,9 +12,11 @@ tags:
   - codex-app-server
   - cursor-sdk
   - claude-agent-sdk
+  - pi-agent
+  - pi-coding-agent
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-13T03:54:26.394Z'
+updatedAt: '2026-06-13T04:14:17.279Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -107,3 +109,26 @@ Validation run:
 - `ahp-claude-agent-sdk`: `npm run test:live` was executed after sourcing `ahp-server/.env`; the test skipped because `CLAUDE_AGENT_SDK_ENABLED` was not set.
 
 After this cut, `ahp-server` packaged process wiring only includes the built-in Pi Agent provider. Claude can still be wired in library mode by importing `createClaudeAgentSdkProvider` from `@wyrd-company/ahp-claude-agent-sdk`.
+
+## Real Pi Coding Agent Provider Package
+
+On 2026-06-13, the real Pi coding-agent provider package was added in `/workspaces/agent-control-plane/ahp-pi-agent` as `@wyrd-company/ahp-pi-agent`.
+
+Commit:
+
+- `ahp-pi-agent` `77c664b` adds `createPiCodingAgentProvider`, using the real `@earendil-works/pi-coding-agent` SDK and `createAgentSession(...)` instead of a direct OpenAI-compatible chat-completions loop.
+
+Important correction: the earlier built-in `ahp-server` Pi-labelled adapter is not a real Pi Agent adapter; it directly implements an OpenAI-compatible streaming chat-completions client/tool loop. It must be removed or renamed in a later cleanup. Future Pi work should use the real Pi packages: `@earendil-works/pi-coding-agent` for the coding-agent assembly, and `@earendil-works/pi-agent-core` for lower-level custom agent runtimes.
+
+The new provider maps Pi coding-agent SDK session events to AHP actions:
+
+- Pi assistant text deltas -> AHP markdown response parts and deltas.
+- Pi coding tool execution events -> server-side AHP tool call lifecycle actions without a contributor.
+- AHP active-client tools present at AHP session creation -> Pi SDK `customTools` that route through `ActiveClientToolRouter.reportInvocation(...)`.
+
+Validation run:
+
+- `ahp-pi-agent`: `npm run verify` passed.
+- `ahp-pi-agent`: `npm pack --dry-run` succeeded.
+
+Known limitation: Pi coding-agent SDK custom tools are registered at Pi session creation. The adapter can enable/disable and route the registered AHP active-client tool names, but newly introduced active-client tool names after Pi session creation require a new AHP session unless Pi exposes a public runtime API for adding SDK custom tool definitions.
