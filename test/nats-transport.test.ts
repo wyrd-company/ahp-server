@@ -2,15 +2,17 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
+import {
+  NatsAhpClientTransport,
+  NatsServerTransport,
+  ahpNatsSubjects,
+  type NatsConnectionLike,
+} from '@wyrd-company/ahp-nats';
 import type { AgentInfo } from '@microsoft/agent-host-protocol';
 
 import {
   AhpServer,
-  NatsAhpClientTransport,
-  NatsServerTransport,
-  ahpNatsSubjects,
   type AgentProvider,
-  type NatsConnectionLike,
 } from '../src/index.js';
 
 const runningServers: Array<Promise<void>> = [];

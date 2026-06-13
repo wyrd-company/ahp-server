@@ -5,19 +5,23 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
+import {
+  GrpcAhpClientTransport,
+  createGrpcUdsServer,
+} from '@wyrd-company/ahp-grpc';
+import {
+  NatsAhpClientTransport,
+  NatsServerTransport,
+  ahpNatsSubjects,
+  type NatsConnectionLike,
+} from '@wyrd-company/ahp-nats';
 import type { AgentInfo, Message, StateAction } from '@microsoft/agent-host-protocol';
 
 import {
   AhpServer,
-  GrpcAhpClientTransport,
-  NatsAhpClientTransport,
-  NatsServerTransport,
-  ahpNatsSubjects,
-  createGrpcUdsServer,
   type AgentProvider,
   type AgentSession,
   type AgentTurnSink,
-  type NatsConnectionLike,
 } from '../src/index.js';
 
 const runningServers: Array<Promise<void>> = [];

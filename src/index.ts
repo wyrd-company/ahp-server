@@ -15,21 +15,6 @@ export {
   createInMemoryTransportPair,
   createInProcessAhpClientTransport,
 } from './transport/in-memory.js';
-export {
-  AhpGrpcUdsServer,
-  GrpcAhpClientTransport,
-  GrpcServerTransport,
-  createGrpcAhpClientTransport,
-  createGrpcUdsServer,
-  grpcUdsAddress,
-} from './grpc/index.js';
-export {
-  NatsAhpClientTransport,
-  NatsServerTransport,
-  ahpNatsSubjects,
-  createNatsAhpClientTransport,
-  createNatsServerTransport,
-} from './nats/index.js';
 export { readServerProcessConfig, startServerProcess } from './process/index.js';
 export type {
   ActiveClientToolRouterInvocation,
@@ -57,17 +42,6 @@ export type {
   TransportFrame,
 } from './types.js';
 export type { FileSystemSessionStoreOptions } from './store.js';
-export type {
-  AhpGrpcUdsClientTransportOptions,
-  AhpGrpcUdsServerOptions,
-  GrpcFrame,
-} from './grpc/index.js';
-export type {
-  AhpNatsSubjectOptions,
-  AhpNatsSubjectPair,
-  AhpNatsTransportOptions,
-  NatsConnectionLike,
-} from './nats/index.js';
 export type {
   InProcessAhpClientTransport,
   ReusableAhpServer,

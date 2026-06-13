@@ -14,7 +14,7 @@ This repository contains the AHP server core and packaged server process:
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - File-backed AHP `resource*` commands constrained to configured local roots.
-- Transport adapters provided by sibling packages, with TypeScript as the first implementation:
+- Transport adapters are provided by sibling packages, with TypeScript as the first implementation:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
   - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
 - Optional provider adapters are published as sibling packages and are imported by host applications deliberately. Use `@wyrd-company/ahp-codex-app-server`, `@wyrd-company/ahp-claude-agent-sdk`, `@wyrd-company/ahp-cursor-sdk`, or `@wyrd-company/ahp-pi-agent` when wiring those runtimes.
@@ -115,7 +115,7 @@ Each `text` value is one UTF-8 JSON-RPC AHP frame. The canonical proto lives in 
 
 ### Packaged Process
 
-The package exposes an `ahp-server` executable. The current process slice wires one filesystem store, one or more configured transports, and explicitly configured adapters.
+The package exposes an `ahp-server` executable. The current process slice wires one filesystem store and one or more configured transports. It does not load provider adapters; host applications compose providers explicitly in library mode.
 
 For gRPC over a Unix domain socket:
 
@@ -198,6 +198,8 @@ const inProcess = createInProcessAhpClientTransport(server);
 // adapter running in the same host process. The application still owns the
 // server, providers, and external AHP transports.
 ```
+
+Transport symbols are intentionally imported from `@wyrd-company/ahp-nats` and `@wyrd-company/ahp-grpc`; `@wyrd-company/ahp-server` does not re-export transport packages.
 
 ## Development
 

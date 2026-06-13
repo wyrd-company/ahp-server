@@ -9,12 +9,11 @@ import { test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
 import { connect } from '@nats-io/transport-node';
-import type { ContentEncoding } from '@microsoft/agent-host-protocol';
-
 import {
   NatsAhpClientTransport,
   ahpNatsSubjects,
-} from '../src/index.js';
+} from '@wyrd-company/ahp-nats';
+import type { ContentEncoding } from '@microsoft/agent-host-protocol';
 
 test('serves file resource commands through the packaged AHP server process over NATS', {
   skip: process.env.NATS_URL ? false : 'set NATS_URL to run live resource process validation',

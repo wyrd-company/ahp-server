@@ -3,13 +3,15 @@ import { test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
 import { connect } from '@nats-io/transport-node';
+import {
+  NatsAhpClientTransport,
+  NatsServerTransport,
+  ahpNatsSubjects,
+} from '@wyrd-company/ahp-nats';
 import type { AgentInfo, Message, StateAction } from '@microsoft/agent-host-protocol';
 
 import {
   AhpServer,
-  NatsAhpClientTransport,
-  NatsServerTransport,
-  ahpNatsSubjects,
   type AgentProvider,
   type AgentSession,
   type AgentTurnSink,

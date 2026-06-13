@@ -24,14 +24,6 @@
       "import": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
     },
-    "./grpc": {
-      "import": "./dist/src/grpc/index.js",
-      "types": "./dist/src/grpc/index.d.ts"
-    },
-    "./nats": {
-      "import": "./dist/src/nats/index.js",
-      "types": "./dist/src/nats/index.d.ts"
-    },
     "./process": {
       "import": "./dist/src/process/index.js",
       "types": "./dist/src/process/index.d.ts"

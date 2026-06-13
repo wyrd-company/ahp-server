@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
+import { GrpcAhpClientTransport } from '@wyrd-company/ahp-grpc';
 
 import {
-  GrpcAhpClientTransport,
   startServerProcess,
   type ServerProcessConfig,
 } from '../src/index.js';
