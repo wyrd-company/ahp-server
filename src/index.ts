@@ -10,7 +10,11 @@ export {
   uriToPath,
 } from './provider-kit.js';
 export { FileSystemSessionStore, InMemorySessionStore } from './store.js';
-export { InMemoryServerTransport, createInMemoryTransportPair } from './transport/in-memory.js';
+export {
+  InMemoryServerTransport,
+  createInMemoryTransportPair,
+  createInProcessAhpClientTransport,
+} from './transport/in-memory.js';
 export { createCodexAppServerProvider, CodexAppServerSocketClient } from './codex-app-server/index.js';
 export { createClaudeAgentSdkProvider, AnthropicClaudeAgentSdkClient } from './claude-agent-sdk/index.js';
 export {
@@ -83,6 +87,10 @@ export type {
   AhpNatsTransportOptions,
   NatsConnectionLike,
 } from './nats/index.js';
+export type {
+  InProcessAhpClientTransport,
+  ReusableAhpServer,
+} from './transport/in-memory.js';
 export type {
   RunningServerProcess,
   ServerProcessConfig,

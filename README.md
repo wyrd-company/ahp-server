@@ -219,6 +219,7 @@ When NATS is enabled, the process subscribes and publishes using the documented 
 import {
   AhpServer,
   FileSystemSessionStore,
+  createInProcessAhpClientTransport,
   createCodexAppServerProvider,
   createClaudeAgentSdkProvider,
   createPiAgentProvider,
@@ -271,6 +272,12 @@ const grpcServer = createGrpcUdsServer({
   },
 });
 await grpcServer.listen();
+
+const inProcess = createInProcessAhpClientTransport(server);
+
+// Pass `inProcess.transport` to an in-process AHP client, such as an A2A
+// adapter running in the same host process. The application still owns the
+// server, providers, and external AHP transports.
 ```
 
 ## Development
@@ -379,4 +386,3 @@ NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-ser
 - Extract adapter packages into sibling repos if that remains the preferred package layout.
 - Full Pi coding-agent runtime/RPC adapter if OpenAI-compatible chat completion is not enough for the desired workflow.
 - Cursor SDK risk spike.
-- A2A adapter where one A2A task maps to one AHP session.

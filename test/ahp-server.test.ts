@@ -5,7 +5,7 @@ import { AhpClient } from '@microsoft/agent-host-protocol/client';
 import type { AhpTransport, JsonRpcMessage, TransportFrame } from '@microsoft/agent-host-protocol/client';
 import type { AgentInfo, Message, SessionState, StateAction } from '@microsoft/agent-host-protocol';
 
-import { AhpServer, createInMemoryTransportPair } from '../src/index.js';
+import { AhpServer, createInMemoryTransportPair, createInProcessAhpClientTransport } from '../src/index.js';
 import type { AgentProvider, AgentSession, AgentTurnSink } from '../src/index.js';
 
 const runningServers: Array<Promise<void>> = [];
@@ -72,6 +72,29 @@ test('serves the minimal AHP session flow to the TypeScript client', async () =>
   assert.equal(events[3]?.type, 'session/turnComplete');
 
   await client.shutdown();
+});
+
+test('creates an in-process client transport for an existing server', async () => {
+  const provider = createEchoProvider();
+  const server = new AhpServer({ providers: [provider] });
+  const inProcess = createInProcessAhpClientTransport(server);
+
+  const client = new AhpClient(inProcess.transport, { requestTimeoutMs: 1_000 });
+  client.connect();
+
+  const init = await client.initialize({
+    clientId: 'in-process-client',
+    protocolVersions: ['0.3.0'],
+    initialSubscriptions: ['ahp-root://'],
+  });
+
+  assert.deepEqual(init.snapshots[0]?.state, {
+    agents: [provider.agent],
+    activeSessions: 0,
+  });
+
+  await client.shutdown();
+  await inProcess.close();
 });
 
 test('returns listSessions and fetchTurns results', async () => {
