@@ -14,9 +14,10 @@ tags:
   - claude-agent-sdk
   - pi-agent
   - pi-coding-agent
+  - cleanup
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-13T04:14:17.279Z'
+updatedAt: '2026-06-13T16:09:39.534Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -132,3 +133,18 @@ Validation run:
 - `ahp-pi-agent`: `npm pack --dry-run` succeeded.
 
 Known limitation: Pi coding-agent SDK custom tools are registered at Pi session creation. The adapter can enable/disable and route the registered AHP active-client tool names, but newly introduced active-client tool names after Pi session creation require a new AHP session unless Pi exposes a public runtime API for adding SDK custom tool definitions.
+
+## False Pi Adapter Removed From ahp-server
+
+On 2026-06-13, the wrongly named built-in `pi-agent` adapter was removed from `ahp-server`.
+
+Commit:
+
+- `ahp-server` `3fb2fa1` removes the direct OpenAI-compatible chat-completions implementation that had been incorrectly labeled as Pi Agent, including source files, exports, process env/config wiring, live scripts, and tests.
+
+After this cleanup, `ahp-server` has no built-in provider adapters. The packaged process can still run configured NATS/gRPC transports, filesystem-backed session state, and resource commands, but provider runtimes are expected to be wired by host applications through optional packages. The real Pi coding-agent provider now lives in `@wyrd-company/ahp-pi-agent` (`ahp-pi-agent` commit `77c664b`).
+
+Validation run:
+
+- `ahp-server`: `npm run verify` passed.
+- `ahp-server`: `npm pack --dry-run` succeeded.
