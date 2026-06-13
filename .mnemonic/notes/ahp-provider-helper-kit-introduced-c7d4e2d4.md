@@ -7,11 +7,12 @@ tags:
   - provider-kit
   - npm
   - release
+  - github-packages
   - codex-app-server
   - cursor-sdk
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-13T03:15:03.661Z'
+updatedAt: '2026-06-13T03:35:48.871Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -50,11 +51,25 @@ Package commits:
 - `ahp-server` `860ec2d` cuts the Codex provider out of the server package, removes the `./codex-app-server` export and Codex process wiring/tests/scripts, switches internal Wyrd dependencies to semver, and adds public npm publish workflow.
 - `ahp-codex-app-server` `5b895c4` switches from local `file:` references to semver dependencies and adds public npm publish workflow.
 - `ahp-cursor-sdk` `6c2ce31` switches provider helper imports to `@wyrd-company/ahp-provider-kit`, removes the obsolete AHP transport wrapper in tests, switches from local `file:` references to semver dependencies, and adds public npm publish workflow.
-Policy encoded in workflows:
+  Policy encoded in workflows:
 - Trigger on pushed tags matching `*.*.*`, then validate the tag is semver without a leading `v`.
 - Require the tag to exactly match `package.json` version.
 - Run `npm install`, `npm run verify`, `npm pack --dry-run`, then `npm publish --access public --provenance` with `NODE_AUTH_TOKEN` from `secrets.NPM_TOKEN`.
 - Use `publishConfig.access = "public"` in scoped package manifests.
 - Use `prepack = npm run clean && npm run build` to avoid stale `dist` artifacts in tarballs.
 - Narrow package `files` to `dist/src` (plus `proto` for `ahp-grpc`) so compiled tests are not published.
-First publish order should be: `ahp-provider-kit`, `ahp-grpc`, `ahp-nats`, `ahp-server`, `ahp-codex-app-server`, then `ahp-cursor-sdk`. A2A packages were explicitly out of scope because they are being handled separately.
+  First publish order should be: `ahp-provider-kit`, `ahp-grpc`, `ahp-nats`, `ahp-server`, `ahp-codex-app-server`, then `ahp-cursor-sdk`. A2A packages were explicitly out of scope because they are being handled separately.
+
+## Dual Registry Publishing And GitHub Releases
+
+Also on 2026-06-13, the semver-tag publish workflows were updated to publish each package to both npmjs and GitHub Packages, then create a GitHub Release with generated notes.
+
+Workflow commits:
+
+- `ahp-provider-kit` `1895432`
+- `ahp-grpc` `d13e91e`
+- `ahp-nats` `1f5108b`
+- `ahp-server` `181de74`
+- `ahp-codex-app-server` `93bc276`
+- `ahp-cursor-sdk` `84d5893`
+The workflows now require `contents: write`, `packages: write`, and `id-token: write`; publish to npmjs with `NPM_TOKEN` and provenance; switch the registry to `https://npm.pkg.github.com` and publish to GitHub Packages with `GITHUB_TOKEN`; then run `gh release create "$GITHUB_REF_NAME" --generate-notes` with a release title of `<package-name>@<version>`. Bob confirmed `NPM_TOKEN` is org-wide and plans to switch npmjs packages to trusted publishing after the first push.
