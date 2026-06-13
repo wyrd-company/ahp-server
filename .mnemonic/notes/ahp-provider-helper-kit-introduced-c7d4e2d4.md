@@ -8,11 +8,12 @@ tags:
   - npm
   - release
   - github-packages
+  - github-actions
   - codex-app-server
   - cursor-sdk
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-13T03:35:48.871Z'
+updatedAt: '2026-06-13T03:36:55.236Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -72,4 +73,17 @@ Workflow commits:
 - `ahp-server` `181de74`
 - `ahp-codex-app-server` `93bc276`
 - `ahp-cursor-sdk` `84d5893`
-The workflows now require `contents: write`, `packages: write`, and `id-token: write`; publish to npmjs with `NPM_TOKEN` and provenance; switch the registry to `https://npm.pkg.github.com` and publish to GitHub Packages with `GITHUB_TOKEN`; then run `gh release create "$GITHUB_REF_NAME" --generate-notes` with a release title of `<package-name>@<version>`. Bob confirmed `NPM_TOKEN` is org-wide and plans to switch npmjs packages to trusted publishing after the first push.
+  The workflows now require `contents: write`, `packages: write`, and `id-token: write`; publish to npmjs with `NPM_TOKEN` and provenance; switch the registry to `https://npm.pkg.github.com` and publish to GitHub Packages with `GITHUB_TOKEN`; then run `gh release create "$GITHUB_REF_NAME" --generate-notes` with a release title of `<package-name>@<version>`. Bob confirmed `NPM_TOKEN` is org-wide and plans to switch npmjs packages to trusted publishing after the first push.
+
+## Workflow Naming Preference
+
+Bob prefers the package release workflow file to be named `.github/workflows/cd.yml` with workflow display name `CD`. On 2026-06-13, the AHP package publish workflows were renamed accordingly.
+
+Rename commits:
+
+- `ahp-provider-kit` `ad58b3e`
+- `ahp-grpc` `c4858d9`
+- `ahp-nats` `38be716`
+- `ahp-server` `96573b4`
+- `ahp-codex-app-server` `312866b`
+- `ahp-cursor-sdk` `db2d734`
