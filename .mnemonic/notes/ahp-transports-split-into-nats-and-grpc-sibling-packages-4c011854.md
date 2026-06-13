@@ -7,7 +7,7 @@ tags:
   - grpc
 lifecycle: permanent
 createdAt: '2026-06-10T14:13:40.647Z'
-updatedAt: '2026-06-11T04:01:09.189Z'
+updatedAt: '2026-06-13T17:08:13.517Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -35,4 +35,4 @@ Phase 1 adopted the upstream `@microsoft/agent-host-protocol/client` transport c
 
 Phase 2 migrated AHP NATS usage to `@nats-io/transport-node` v3. Commits: `3c3a3dc` in `ahp-nats` and `5aa1098` in `ahp-server`. `nats` v2 was removed from both package manifests and lockfiles. `StringCodec` was replaced with direct `TextEncoder` and `TextDecoder` usage. `ahp-nats` now matches `a2a-nats`'s `NatsConnectionLike` / `NatsMsgLike` / `NatsRequestOptions` shape exactly, while keeping `MsgLike` as a backward-compatible alias; the definitions remain separate to avoid coupling the two sibling transport packages through a shared runtime dependency.
 
-Validation passed: `npm run verify` in `ahp-grpc`, `ahp-nats`, `ahp-server`, `a2a-nats`, and `a2a-ahp`. Live NATS validation also passed against a temporary Docker NATS broker for `ahp-server` `test/nats-live.test.ts` and `a2a-nats` `test/nats-docker.test.ts`, including JetStream and KV tests.
+Validation passed: `npm run verify` in `ahp-grpc`, `ahp-nats`, `ahp-server`, `a2a-nats`, and `a2a-ahp`. Live NATS validation also passed against a temporary Docker NATS broker for `ahp-server` `test/nats-live.test.ts` and `a2a-nats` `test/nats-docker.test.ts`, including JetStream and KV tests.## Server Transport Re-Export RemovedOn 2026-06-13, `ahp-server` commit `21566ef` removed the `./nats` and `./grpc` package subpath exports and deleted the `src/nats/index.ts` and `src/grpc/index.ts` re-export shims. Consumers now import transport symbols directly from `@wyrd-company/ahp-nats` and `@wyrd-company/ahp-grpc` when composing an AHP host. The packaged server process still composes those transport packages internally, but the core server package no longer presents them as part of its public library barrel.Validation passed after the cleanup: `npm run verify` in `ahp-server`, `ahp-nats`, and `ahp-grpc`; `npm pack --dry-run` in `ahp-server` confirmed the package no longer includes `dist/src/nats` or `dist/src/grpc`. Live NATS tests in `ahp-server` were skipped because `NATS_URL` was not set.
