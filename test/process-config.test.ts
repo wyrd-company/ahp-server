@@ -6,14 +6,12 @@ import { readServerProcessConfig } from '../src/index.js';
 test('reads server process configuration from environment', () => {
   const config = readServerProcessConfig({
     NATS_URL: 'nats://127.0.0.1:4222',
-    CODEX_APP_SERVER_SOCKET: '/tmp/codex.sock',
     AHP_NATS_NAMESPACE: 'demo',
     AHP_SERVER_ID: 'server-a',
     AHP_CLIENT_ID: 'client-a',
     AHP_GRPC_UNIX_SOCKET: '/tmp/ahp.sock',
     AHP_STORAGE_DIR: 'relative-storage',
     AHP_DEFAULT_DIRECTORY: '/workspaces/example',
-    CODEX_DEFAULT_MODEL: 'gpt-test',
     CLAUDE_AGENT_SDK_ENABLED: '1',
     CLAUDE_AGENT_SDK_MODEL: 'claude-test',
     CLAUDE_AGENT_SDK_EXECUTABLE: '/usr/local/bin/claude',
@@ -24,14 +22,12 @@ test('reads server process configuration from environment', () => {
   });
 
   assert.equal(config.natsUrl, 'nats://127.0.0.1:4222');
-  assert.equal(config.codexAppServerSocket, '/tmp/codex.sock');
   assert.equal(config.natsNamespace, 'demo');
   assert.equal(config.serverId, 'server-a');
   assert.equal(config.clientId, 'client-a');
   assert.equal(config.grpcUnixSocket, '/tmp/ahp.sock');
   assert.ok(config.storageDirectory.endsWith('/relative-storage'));
   assert.equal(config.defaultDirectory, 'file:///workspaces/example');
-  assert.equal(config.codexDefaultModel, 'gpt-test');
   assert.equal(config.claudeAgentSdkConfigured, true);
   assert.equal(config.claudeAgentSdkModel, 'claude-test');
   assert.equal(config.claudeAgentSdkExecutable, '/usr/local/bin/claude');
@@ -44,7 +40,7 @@ test('reads server process configuration from environment', () => {
 
 test('requires at least one transport and at least one provider', () => {
   assert.throws(
-    () => readServerProcessConfig({ CODEX_APP_SERVER_SOCKET: '/tmp/codex.sock' }),
+    () => readServerProcessConfig({ CLAUDE_AGENT_SDK_ENABLED: 'true' }),
     /configure at least one transport/,
   );
   assert.throws(
@@ -94,6 +90,5 @@ test('allows Claude Agent SDK as the only provider', () => {
 
   assert.equal(config.claudeAgentSdkConfigured, true);
   assert.equal(config.claudeAgentSdkPermissionMode, 'dontAsk');
-  assert.equal(config.codexAppServerSocket, undefined);
   assert.equal(config.piAgentProvider, undefined);
 });

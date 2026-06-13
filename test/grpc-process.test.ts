@@ -22,7 +22,6 @@ test('starts the server process with gRPC Unix socket as the only transport', as
     serverId: 'server',
     clientId: 'client',
     storageDirectory,
-    codexDefaultModel: 'gpt-test',
     claudeAgentSdkConfigured: true,
     claudeAgentSdkPermissionMode: 'dontAsk',
   } satisfies ServerProcessConfig);

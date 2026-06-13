@@ -9,9 +9,6 @@ export interface ServerProcessConfig {
   readonly clientId: string;
   readonly grpcUnixSocket?: string;
   readonly storageDirectory: string;
-  readonly codexAppServerSocket?: string;
-  readonly codexAppServerUrl?: string;
-  readonly codexDefaultModel: string;
   readonly claudeAgentSdkConfigured: boolean;
   readonly claudeAgentSdkModel?: string;
   readonly claudeAgentSdkExecutable?: string;
@@ -26,8 +23,6 @@ export interface ServerProcessConfig {
 export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): ServerProcessConfig {
   const natsUrl = optionalEnv(env, 'NATS_URL');
   const grpcUnixSocket = optionalEnv(env, 'AHP_GRPC_UNIX_SOCKET') ?? optionalEnv(env, 'AHP_GRPC_UDS_PATH');
-  const codexAppServerSocket = optionalEnv(env, 'CODEX_APP_SERVER_SOCKET');
-  const codexAppServerUrl = optionalEnv(env, 'CODEX_APP_SERVER_URL');
   const claudeAgentSdkModel = optionalEnv(env, 'CLAUDE_AGENT_SDK_MODEL');
   const claudeAgentSdkExecutable = optionalEnv(env, 'CLAUDE_AGENT_SDK_EXECUTABLE');
   const claudeAgentSdkPermissionMode = optionalEnv(env, 'CLAUDE_AGENT_SDK_PERMISSION_MODE') ?? 'dontAsk';
@@ -37,14 +32,13 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
   const piAgentBaseUrl = optionalEnv(env, 'PI_AGENT_BASE_URL') ?? defaultPiAgentBaseUrl(piAgentProvider);
   const piAgentApiKey = optionalEnv(env, 'PI_AGENT_API_KEY') ?? providerApiKey(env, piAgentProvider);
   const piAgentModel = optionalEnv(env, 'PI_AGENT_MODEL');
-  const codexConfigured = Boolean(codexAppServerSocket || codexAppServerUrl);
   const claudeConfigured = Boolean(claudeAgentSdkEnabled || claudeAgentSdkModel || claudeAgentSdkExecutable);
   const piConfigured = Boolean(configuredPiAgentProvider || optionalEnv(env, 'PI_AGENT_BASE_URL') || optionalEnv(env, 'PI_AGENT_API_KEY') || piAgentModel);
   if (!natsUrl && !grpcUnixSocket) {
     throw new Error('configure at least one transport: NATS_URL or AHP_GRPC_UNIX_SOCKET');
   }
-  if (!codexConfigured && !claudeConfigured && !piConfigured) {
-    throw new Error('configure at least one provider: Codex endpoint, CLAUDE_AGENT_SDK_ENABLED, or PI_AGENT_MODEL with PI_AGENT_API_KEY/OPENCODE_API_KEY');
+  if (!claudeConfigured && !piConfigured) {
+    throw new Error('configure at least one provider: CLAUDE_AGENT_SDK_ENABLED, or PI_AGENT_MODEL with PI_AGENT_API_KEY/OPENCODE_API_KEY');
   }
   if (piConfigured && (!piAgentBaseUrl || !piAgentApiKey || !piAgentModel)) {
     throw new Error('PI_AGENT_MODEL and a provider API key are required when configuring Pi Agent');
@@ -57,9 +51,6 @@ export function readServerProcessConfig(env: NodeJS.ProcessEnv = process.env): S
     clientId: optionalEnv(env, 'AHP_CLIENT_ID') ?? 'client',
     grpcUnixSocket: grpcUnixSocket ? resolve(grpcUnixSocket) : undefined,
     storageDirectory: resolve(optionalEnv(env, 'AHP_STORAGE_DIR') ?? '.ahp-server'),
-    codexAppServerSocket,
-    codexAppServerUrl,
-    codexDefaultModel: optionalEnv(env, 'CODEX_E2E_MODEL') ?? optionalEnv(env, 'CODEX_DEFAULT_MODEL') ?? 'gpt-5.5',
     claudeAgentSdkConfigured: claudeConfigured,
     claudeAgentSdkModel,
     claudeAgentSdkExecutable,

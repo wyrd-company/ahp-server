@@ -33,8 +33,6 @@ test('serves file resource commands through the packaged AHP server process over
     AHP_STORAGE_DIR: storageDirectory,
     AHP_DEFAULT_DIRECTORY: resourceRoot,
     CLAUDE_AGENT_SDK_ENABLED: '1',
-    CODEX_APP_SERVER_SOCKET: '',
-    CODEX_APP_SERVER_URL: '',
     PI_AGENT_BASE_URL: '',
     PI_AGENT_API_KEY: '',
     PI_AGENT_MODEL: '',

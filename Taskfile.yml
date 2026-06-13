@@ -21,16 +21,6 @@ tasks:
     cmds:
       - npm run verify
 
-  live:vertical:
-    desc: Run the live NATS plus Codex App Server vertical-slice validation
-    cmds:
-      - scripts/validate-live-vertical.sh
-
-  live:process:
-    desc: Run the live packaged server-process validation
-    cmds:
-      - scripts/validate-live-server-process.sh
-
   live:pi:
     desc: Run live Pi Agent adapter and packaged process validation
     cmds:

@@ -7,28 +7,22 @@ The package target is `@wyrd-company/ahp-server`.
 
 ## Current Scope
 
-This repository currently contains the first vertical-slice implementation:
+This repository contains the AHP server core and packaged server process:
 
 - A transport-agnostic AHP server core.
 - Compatibility tests against the published `@microsoft/agent-host-protocol` TypeScript client.
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
-- A Codex App Server adapter that connects to CAS using WebSocket JSON-RPC-lite over a Unix socket.
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints and exposes active-client tools through OpenAI-compatible tool calls.
 - A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions and exposes active-client tools through a local Streamable HTTP MCP bridge.
 - File-backed AHP `resource*` commands constrained to configured local roots.
 - Transport adapters provided by sibling packages, with TypeScript as the first implementation:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
   - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
-- Gated live integration tests for real NATS, real CAS, real Pi/OpenCode Go, real Claude Agent SDK, resource commands, and packaged server-process paths.
+- Optional provider adapters are published as sibling packages and are imported by host applications deliberately. For Codex App Server, use `@wyrd-company/ahp-codex-app-server`.
+- Gated live integration tests for real NATS, real Pi/OpenCode Go, real Claude Agent SDK, resource commands, and packaged server-process paths.
 
-The first target demo is:
-
-```text
-NATS client -> AHP server -> Codex App Server Unix socket -> streamed Codex response -> NATS client
-```
-
-The normal test suite validates the AHP client/server flow, CAS adapter mapping with a fake CAS client, and NATS subject routing with a fake in-process broker. Gated live tests validate against real services when endpoints are provided, including the packaged `ahp-server` process.
+The normal test suite validates the AHP client/server flow, active-client tool routing, resource commands, packaged process behavior, and NATS/gRPC transport wiring.
 
 ## Design Direction
 
@@ -92,28 +86,6 @@ The server supports active-client tools as a provider-agnostic capability:
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
 - The Claude Agent SDK provider registers those tools with Claude through a per-session local Streamable HTTP MCP server named `activeClientTools`.
 - The Pi Agent provider sends those tools as OpenAI-compatible `tools`, forwards model `tool_calls` through AHP, and continues the chat-completions loop with OpenAI `tool` result messages.
-- The Codex App Server provider registers the initial active-client tool set as experimental CAS `dynamicTools` on `thread/start`, routes CAS `item/tool/call` server requests through AHP, and returns the owning client's result as a CAS dynamic tool response.
-
-## Codex App Server Adapter
-
-CAS uses WebSocket text frames over a Unix domain socket. Its protocol is JSON-RPC-like but intentionally omits `jsonrpc: "2.0"`.
-
-The adapter:
-
-- Connects to an already-running CAS Unix socket.
-- Can also connect to a CAS WebSocket URL for validation and non-target local deployments.
-- Sends `initialize`, then `initialized`.
-- Creates a CAS thread for each AHP session via `thread/start`.
-- Seeds active-client tools as experimental CAS `dynamicTools` when the AHP session is created.
-- Sends user turns via `turn/start`.
-- Maps `item/agentMessage/delta` to AHP markdown response parts and deltas.
-- Maps CAS `item/tool/call` server requests to the AHP `session/toolCallStart` / `session/toolCallReady` / `session/toolCallComplete` lifecycle using server-owned session and turn correlation.
-- Maps `turn/completed` to `session/turnComplete`.
-- Responds to unknown CAS server requests with method-not-found.
-
-CAS currently accepts `dynamicTools` at `thread/start`; the adapter keeps its local active-client tool view current for invocation validation, but newly-added tools after CAS thread creation are not model-visible until CAS offers a live dynamic-tool update API.
-
-When starting CAS over a Unix socket, place the socket under a private directory such as `/tmp/ahp-cas` with mode `700`. Codex secures the socket parent directory and will fail if asked to use a shared directory directly, such as `unix:///tmp/app-server-control.sock`.
 
 ## NATS Convention
 
@@ -147,16 +119,6 @@ Each `text` value is one UTF-8 JSON-RPC AHP frame. The canonical proto lives in 
 ### Packaged Process
 
 The package exposes an `ahp-server` executable. The current process slice wires one filesystem store, one or more configured transports, and explicitly configured adapters.
-
-```bash
-NATS_URL=nats://nats:4222 \
-CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock \
-AHP_STORAGE_DIR=/workspace-storage/ahp-server \
-AHP_NATS_NAMESPACE=ahp \
-AHP_SERVER_ID=devcontainer-1 \
-AHP_CLIENT_ID=client-1 \
-ahp-server
-```
 
 For gRPC over a Unix domain socket:
 
@@ -196,14 +158,12 @@ Configuration:
   - `NATS_URL` for the NATS transport.
   - `AHP_GRPC_UNIX_SOCKET` for the gRPC Unix domain socket transport. `AHP_GRPC_UDS_PATH` is accepted as an alias.
 - Configure at least one provider:
-  - Codex: `CODEX_APP_SERVER_SOCKET` or `CODEX_APP_SERVER_URL`.
   - Claude Agent SDK: `CLAUDE_AGENT_SDK_ENABLED=1`, or set `CLAUDE_AGENT_SDK_MODEL` / `CLAUDE_AGENT_SDK_EXECUTABLE`.
   - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp` when NATS is enabled.
 - `AHP_SERVER_ID` defaults to `server` when NATS is enabled.
 - `AHP_CLIENT_ID` defaults to `client` when NATS is enabled.
-- `CODEX_DEFAULT_MODEL` defaults to `gpt-5.5`.
 - `CLAUDE_AGENT_SDK_MODEL` is optional; when omitted, the Claude SDK uses its default model.
 - `CLAUDE_AGENT_SDK_EXECUTABLE` optionally points at a Claude Code executable instead of the SDK bundled binary.
 - `CLAUDE_AGENT_SDK_PERMISSION_MODE` defaults to `dontAsk`.
@@ -220,7 +180,6 @@ import {
   AhpServer,
   FileSystemSessionStore,
   createInProcessAhpClientTransport,
-  createCodexAppServerProvider,
   createClaudeAgentSdkProvider,
   createPiAgentProvider,
 } from '@wyrd-company/ahp-server';
@@ -244,9 +203,6 @@ const server = new AhpServer({
   defaultDirectory: 'file:///workspace',
   resourceRoots: ['file:///workspace'],
   providers: [
-    createCodexAppServerProvider({
-      socketPath: '/path/to/codex-app-server.sock',
-    }),
     createPiAgentProvider({
       baseUrl: 'https://opencode.ai/zen/go/v1',
       apiKey: process.env.OPENCODE_API_KEY!,
@@ -285,8 +241,6 @@ const inProcess = createInProcessAhpClientTransport(server);
 ```bash
 npm install
 npm run verify
-task live:vertical
-task live:process
 task live:pi
 task live:claude
 task live:resources
@@ -298,16 +252,9 @@ task live:resources
 - Node test suite
 - Build
 
-Live validation is opt-in because it requires external processes and, for the full CAS turn, model access:
+Live validation is opt-in because it requires external processes and model access:
 
 ```bash
-# Preferred repeatable full validation. Starts Docker NATS and CAS over Unix socket
-# when NATS_URL and CODEX_APP_SERVER_URL/CODEX_APP_SERVER_SOCKET are not supplied.
-task live:vertical
-
-# Validate the packaged server process against Docker NATS and CAS over Unix socket.
-task live:process
-
 # Validate the Pi Agent adapter and packaged server process.
 # The task loads .env from this repository root when present.
 task live:pi
@@ -338,51 +285,20 @@ CLAUDE_AGENT_SDK_ENABLED=1
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
 docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ahp-server-nats-validation
 
-# Start a real Codex App Server over WebSocket.
-codex app-server --listen ws://127.0.0.1:43123
-
-# Or start CAS over a Unix socket. Use a private directory; Codex secures the socket
-# directory and will fail if asked to chmod a shared directory such as /tmp.
-mkdir -p /tmp/ahp-cas
-chmod 700 /tmp/ahp-cas
-codex app-server --listen unix:///tmp/ahp-cas/app-server-control.sock
-
 # Validate AHP over real NATS.
 NATS_URL=nats://<container-ip>:4222 node --test --import tsx test/nats-live.test.ts
-
-# Validate AHP backed by real CAS.
-CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 CODEX_E2E_MODEL=gpt-5.5 \
-  CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
-  node --test --import tsx test/codex-live.test.ts
-
-# Or validate against CAS over Unix socket.
-CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock CODEX_E2E_MODEL=gpt-5.5 \
-  CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
-  node --test --import tsx test/codex-live.test.ts
-
-# Validate the full vertical slice.
-NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_URL=ws://127.0.0.1:43123 \
-  CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
-  node --test --import tsx test/live-vertical-slice.test.ts
-
-# Or validate the full vertical slice over NATS + CAS Unix socket.
-NATS_URL=nats://<container-ip>:4222 CODEX_APP_SERVER_SOCKET=/tmp/ahp-cas/app-server-control.sock \
-  CODEX_E2E_MODEL=gpt-5.5 CODEX_LIVE_TURN_PROMPT='Reply with exactly: pong' \
-  node --test --import tsx test/live-vertical-slice.test.ts
 ```
 
 ## References
 
 - AHP protocol and TypeScript client: `/workspaces/references/agent-host-protocol`
 - VS Code reference AHP server: `/workspaces/references/vscode/src/vs/platform/agentHost/node`
-- Codex App Server protocol: `/workspaces/references/codex/codex-rs/app-server-protocol`
-- Codex App Server Rust client: `/workspaces/references/codex/codex-rs/app-server-client`
 - Pi Agent harness: `/workspaces/references/pi`
 - Claude Agent SDK: `/workspaces/references/claude-agent-sdk-typescript`
 - NATS TypeScript SDK: `/workspaces/references/nats.js`
 
 ## Planned Follow-Up
 
-- Extract adapter packages into sibling repos if that remains the preferred package layout.
+- Extract remaining built-in adapter packages into sibling repos.
 - Full Pi coding-agent runtime/RPC adapter if OpenAI-compatible chat completion is not enough for the desired workflow.
 - Cursor SDK risk spike.

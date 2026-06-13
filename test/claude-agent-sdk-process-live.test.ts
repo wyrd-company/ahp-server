@@ -31,8 +31,6 @@ test('streams a live Claude Agent SDK turn through the packaged AHP server proce
     AHP_NATS_NAMESPACE: namespace,
     AHP_SERVER_ID: serverId,
     AHP_STORAGE_DIR: storageDirectory,
-    CODEX_APP_SERVER_SOCKET: '',
-    CODEX_APP_SERVER_URL: '',
     PI_AGENT_BASE_URL: '',
     PI_AGENT_API_KEY: '',
     PI_AGENT_MODEL: '',

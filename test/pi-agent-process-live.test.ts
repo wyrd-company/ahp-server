@@ -34,8 +34,6 @@ test('streams a live Pi Agent turn through the packaged AHP server process', {
     AHP_NATS_NAMESPACE: namespace,
     AHP_SERVER_ID: serverId,
     AHP_STORAGE_DIR: storageDirectory,
-    CODEX_APP_SERVER_SOCKET: '',
-    CODEX_APP_SERVER_URL: '',
   });
 
   const clientConnection = await connect({ servers: process.env.NATS_URL, timeout: 2_000 });

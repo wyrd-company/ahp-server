@@ -10,7 +10,7 @@
     "url": "git+https://github.com/wyrd-company/ahp-server.git"
   },
   "files": [
-    "dist",
+    "dist/src",
     "README.md",
     "LICENSE"
   ],
@@ -23,10 +23,6 @@
     ".": {
       "import": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
-    },
-    "./codex-app-server": {
-      "import": "./dist/src/codex-app-server/index.js",
-      "types": "./dist/src/codex-app-server/index.d.ts"
     },
     "./claude-agent-sdk": {
       "import": "./dist/src/claude-agent-sdk/index.js",
@@ -56,12 +52,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
+    "prepack": "npm run clean && npm run build",
+    "prepublishOnly": "npm run verify",
     "test": "node --test --import tsx test/*.test.ts",
     "test:live:claude": "scripts/validate-live-claude-agent-sdk.sh",
     "test:live:pi": "scripts/validate-live-pi-agent.sh",
-    "test:live:process": "scripts/validate-live-server-process.sh",
     "test:live:resources": "scripts/validate-live-resources.sh",
-    "test:live:vertical": "scripts/validate-live-vertical.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
   },
@@ -70,10 +66,9 @@
     "@microsoft/agent-host-protocol": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nats-io/transport-node": "^3.4.0",
-    "@wyrd-company/ahp-codex-app-server": "file:../ahp-codex-app-server",
-    "@wyrd-company/ahp-grpc": "file:../ahp-grpc",
-    "@wyrd-company/ahp-nats": "file:../ahp-nats",
-    "@wyrd-company/ahp-provider-kit": "file:../ahp-provider-kit",
+    "@wyrd-company/ahp-grpc": "^0.1.0",
+    "@wyrd-company/ahp-nats": "^0.1.0",
+    "@wyrd-company/ahp-provider-kit": "^0.1.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -84,5 +79,8 @@
   },
   "overrides": {
     "esbuild": "^0.28.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
