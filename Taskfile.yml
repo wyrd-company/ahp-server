@@ -20,8 +20,3 @@ tasks:
     desc: Run typecheck, tests, and build
     cmds:
       - npm run verify
-
-  live:resources:
-    desc: Run live packaged resource command validation over NATS
-    cmds:
-      - scripts/validate-live-resources.sh

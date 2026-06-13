@@ -16,17 +16,10 @@
   ],
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
-  "bin": {
-    "ahp-server": "./dist/src/cli.js"
-  },
   "exports": {
     ".": {
       "import": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
-    },
-    "./process": {
-      "import": "./dist/src/process/index.js",
-      "types": "./dist/src/process/index.d.ts"
     },
     "./provider-kit": {
       "import": "./dist/src/provider-kit.js",
@@ -39,15 +32,11 @@
     "prepack": "npm run clean && npm run build",
     "prepublishOnly": "npm run verify",
     "test": "node --test --import tsx test/*.test.ts",
-    "test:live:resources": "scripts/validate-live-resources.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@microsoft/agent-host-protocol": "^0.3.0",
-    "@nats-io/transport-node": "^3.4.0",
-    "@wyrd-company/ahp-grpc": "^0.1.0",
-    "@wyrd-company/ahp-nats": "^0.1.0",
     "@wyrd-company/ahp-provider-kit": "^0.1.0"
   },
   "devDependencies": {

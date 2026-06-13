@@ -1,13 +1,13 @@
 # Agent Host Protocol (AHP) Server
 
-Production-shaped TypeScript implementation of a stand-alone
+Production-shaped TypeScript implementation of the
 [Agent Host Protocol](https://github.com/microsoft/agent-host-protocol) server.
 
 The package target is `@wyrd-company/ahp-server`.
 
 ## Current Scope
 
-This repository contains the AHP server core and packaged server process:
+This repository contains the AHP server library core:
 
 - A transport-agnostic AHP server core.
 - Compatibility tests against the published `@microsoft/agent-host-protocol` TypeScript client.
@@ -18,9 +18,8 @@ This repository contains the AHP server core and packaged server process:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
   - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
 - Optional provider adapters are published as sibling packages and are imported by host applications deliberately. Use `@wyrd-company/ahp-codex-app-server`, `@wyrd-company/ahp-claude-agent-sdk`, `@wyrd-company/ahp-cursor-sdk`, or `@wyrd-company/ahp-pi-agent` when wiring those runtimes.
-- Gated live integration tests for real NATS, resource commands, and packaged server-process paths.
 
-The normal test suite validates the AHP client/server flow, active-client tool routing, resource commands, packaged process behavior, and NATS/gRPC transport wiring.
+The normal test suite validates the AHP client/server flow, multiple simultaneous client transports, active-client tool routing, resource commands, and session storage.
 
 ## Design Direction
 
@@ -32,7 +31,7 @@ State can start in memory for tests and short-lived runs, or use `FileSystemSess
 
 Security is scoped for local devcontainer/Docker-network use first. Remote and multi-tenant security are not implemented, but the transport and provider boundaries should not make that impossible later.
 
-File resource commands only support `file://` URIs. They are constrained to `resourceRoots` in library mode, or `AHP_DEFAULT_DIRECTORY` in the packaged process. If no root is configured, the server process working directory is used. Existing targets are checked through `realpath` so symlinks cannot escape the allowed root.
+File resource commands only support `file://` URIs. They are constrained to `resourceRoots`. If no root is configured, the current process working directory is used. Existing targets are checked through `realpath` so symlinks cannot escape the allowed root.
 
 ## Implemented AHP Surface
 
@@ -84,18 +83,18 @@ The server supports active-client tools as a provider-agnostic capability:
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
 - Optional provider packages map active-client tools to provider-specific tool surfaces, such as Streamable HTTP MCP or runtime-native tool APIs.
 
-## NATS Convention
+## Transport Packages
 
-The initial subject convention is:
+`@wyrd-company/ahp-server` does not include a CLI and does not re-export transport packages. Host applications import the transports they need and pass their `AhpTransport` instances to `AhpServer.accept(...)`.
+
+The NATS transport package uses this subject convention:
 
 ```text
 <namespace>.server.<serverId>.client.<clientId>.to-server
 <namespace>.server.<serverId>.client.<clientId>.to-client
 ```
 
-The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token text.
-
-## gRPC Convention
+The default namespace is `ahp`. Subject tokens are sanitized to NATS-safe token text by `@wyrd-company/ahp-nats`.
 
 The gRPC transport package exposes one bidirectional streaming RPC over a Unix domain socket:
 
@@ -113,34 +112,7 @@ Each `text` value is one UTF-8 JSON-RPC AHP frame. The canonical proto lives in 
 
 ## Usage Sketch
 
-### Packaged Process
-
-The package exposes an `ahp-server` executable. The current process slice wires one filesystem store and one or more configured transports. It does not load provider adapters; host applications compose providers explicitly in library mode.
-
-For gRPC over a Unix domain socket:
-
-```bash
-AHP_GRPC_UNIX_SOCKET=/tmp/ahp-server/ahp.sock \
-AHP_STORAGE_DIR=/workspace-storage/ahp-server \
-ahp-server
-```
-
-NATS and gRPC can be enabled at the same time by setting both `NATS_URL` and `AHP_GRPC_UNIX_SOCKET`.
-
-Configuration:
-
-- Configure at least one transport:
-  - `NATS_URL` for the NATS transport.
-  - `AHP_GRPC_UNIX_SOCKET` for the gRPC Unix domain socket transport. `AHP_GRPC_UDS_PATH` is accepted as an alias.
-- `AHP_STORAGE_DIR` defaults to `.ahp-server`.
-- `AHP_NATS_NAMESPACE` defaults to `ahp` when NATS is enabled.
-- `AHP_SERVER_ID` defaults to `server` when NATS is enabled.
-- `AHP_CLIENT_ID` defaults to `client` when NATS is enabled.
-- `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory and packaged-process resource root. Plain paths are converted to `file://` URIs.
-
-When NATS is enabled, the process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs. When gRPC is enabled, the process listens on the configured Unix socket and accepts one AHP client stream per gRPC `Connect` call.
-
-### Library
+### User-Owned Host
 
 ```ts
 import {
@@ -157,6 +129,9 @@ import {
 import {
   createGrpcUdsServer,
 } from '@wyrd-company/ahp-grpc';
+import { connect } from '@nats-io/transport-node';
+
+const natsConnection = await connect({ servers: process.env.NATS_URL });
 
 const subjects = ahpNatsSubjects({
   serverId: 'devcontainer-1',
@@ -199,14 +174,11 @@ const inProcess = createInProcessAhpClientTransport(server);
 // server, providers, and external AHP transports.
 ```
 
-Transport symbols are intentionally imported from `@wyrd-company/ahp-nats` and `@wyrd-company/ahp-grpc`; `@wyrd-company/ahp-server` does not re-export transport packages.
-
 ## Development
 
 ```bash
 npm install
 npm run verify
-task live:resources
 ```
 
 `npm run verify` runs:
@@ -215,30 +187,14 @@ task live:resources
 - Node test suite
 - Build
 
-Live validation is opt-in because it requires external processes and model access:
-
-```bash
-# Validate packaged file resource commands over Docker NATS.
-task live:resources
-
-# Start NATS in Docker and discover its container IP.
-docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
-docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ahp-server-nats-validation
-
-# Validate AHP over real NATS.
-NATS_URL=nats://<container-ip>:4222 node --test --import tsx test/nats-live.test.ts
-```
-
 ## References
 
 - AHP protocol and TypeScript client: `/workspaces/references/agent-host-protocol`
 - VS Code reference AHP server: `/workspaces/references/vscode/src/vs/platform/agentHost/node`
 - Pi Agent harness: `/workspaces/references/pi`
 - Claude Agent SDK: `/workspaces/references/claude-agent-sdk-typescript`
-- NATS TypeScript SDK: `/workspaces/references/nats.js`
 
 ## Planned Follow-Up
 
-- Extract remaining built-in adapter packages into sibling repos.
-- Full Pi coding-agent runtime/RPC adapter if OpenAI-compatible chat completion is not enough for the desired workflow.
-- Cursor SDK risk spike.
+- Remove the temporary `./provider-kit` compatibility re-export once consumers import `@wyrd-company/ahp-provider-kit` directly.
+- Create a separate reference host or CLI package if a reusable executable becomes useful.

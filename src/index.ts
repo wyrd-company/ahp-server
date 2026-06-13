@@ -15,7 +15,6 @@ export {
   createInMemoryTransportPair,
   createInProcessAhpClientTransport,
 } from './transport/in-memory.js';
-export { readServerProcessConfig, startServerProcess } from './process/index.js';
 export type {
   ActiveClientToolRouterInvocation,
   ActiveClientToolRouterOptions,
@@ -46,7 +45,3 @@ export type {
   InProcessAhpClientTransport,
   ReusableAhpServer,
 } from './transport/in-memory.js';
-export type {
-  RunningServerProcess,
-  ServerProcessConfig,
-} from './process/index.js';
