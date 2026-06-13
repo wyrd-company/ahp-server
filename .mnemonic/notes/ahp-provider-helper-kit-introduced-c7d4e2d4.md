@@ -11,9 +11,10 @@ tags:
   - github-actions
   - codex-app-server
   - cursor-sdk
+  - claude-agent-sdk
 lifecycle: permanent
 createdAt: '2026-06-11T02:31:46.134Z'
-updatedAt: '2026-06-13T03:36:55.236Z'
+updatedAt: '2026-06-13T03:54:26.394Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
@@ -87,3 +88,22 @@ Rename commits:
 - `ahp-server` `96573b4`
 - `ahp-codex-app-server` `312866b`
 - `ahp-cursor-sdk` `db2d734`
+
+## Claude Agent SDK Provider Extracted
+
+On 2026-06-13, the Claude Agent SDK adapter was extracted from `ahp-server` into the sibling repo `/workspaces/agent-control-plane/ahp-claude-agent-sdk` as package `@wyrd-company/ahp-claude-agent-sdk`.
+
+Commits:
+
+- `ahp-claude-agent-sdk` `aca3246` adds the provider package, Streamable HTTP MCP active-client tool bridge, unit/live tests, package metadata, and `CD` semver-tag publishing workflow for npmjs, GitHub Packages, and GitHub Releases.
+- `ahp-server` `a4be15d` removes the built-in Claude provider, `./claude-agent-sdk` export, Claude process wiring, Claude live scripts/tests, and stale Claude/MCP runtime dependencies from the core server package.
+
+The extracted package depends on `@wyrd-company/ahp-provider-kit` for provider/session contracts and helper utilities, and keeps `@wyrd-company/ahp-server` as a peer/dev dependency only for tests and host integration.
+
+Validation run:
+
+- `ahp-server`: `npm run verify` passed and `npm pack --dry-run` succeeded.
+- `ahp-claude-agent-sdk`: `npm run verify` passed and `npm pack --dry-run` succeeded.
+- `ahp-claude-agent-sdk`: `npm run test:live` was executed after sourcing `ahp-server/.env`; the test skipped because `CLAUDE_AGENT_SDK_ENABLED` was not set.
+
+After this cut, `ahp-server` packaged process wiring only includes the built-in Pi Agent provider. Claude can still be wired in library mode by importing `createClaudeAgentSdkProvider` from `@wyrd-company/ahp-claude-agent-sdk`.
