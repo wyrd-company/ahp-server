@@ -22,7 +22,6 @@ try {
     grpcUnixSocket: config.grpcUnixSocket,
     storageDirectory: config.storageDirectory,
     providers: [
-      ...(config.claudeAgentSdkConfigured ? ['claude-agent-sdk'] : []),
       ...(config.piAgentProvider ? ['pi-agent'] : []),
     ],
   }));

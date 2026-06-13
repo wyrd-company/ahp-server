@@ -4,7 +4,6 @@ import { createGrpcUdsServer, type AhpGrpcUdsServer } from '@wyrd-company/ahp-gr
 
 import { AhpServer } from '../server.js';
 import { FileSystemSessionStore } from '../store.js';
-import { createClaudeAgentSdkProvider, type ClaudeAgentSdkOptions } from '../claude-agent-sdk/index.js';
 import { createPiAgentProvider } from '../pi-agent/provider.js';
 import type { ServerTransport } from '../types.js';
 import type { ServerProcessConfig } from './config.js';
@@ -17,13 +16,6 @@ export interface RunningServerProcess {
 
 export async function startServerProcess(config: ServerProcessConfig): Promise<RunningServerProcess> {
   const providers = [];
-  if (config.claudeAgentSdkConfigured) {
-    providers.push(createClaudeAgentSdkProvider({
-      defaultModel: config.claudeAgentSdkModel,
-      pathToClaudeCodeExecutable: config.claudeAgentSdkExecutable,
-      permissionMode: config.claudeAgentSdkPermissionMode as ClaudeAgentSdkOptions['permissionMode'],
-    }));
-  }
   if (config.piAgentBaseUrl && config.piAgentApiKey && config.piAgentModel) {
     providers.push(createPiAgentProvider({
       baseUrl: config.piAgentBaseUrl,

@@ -26,11 +26,6 @@ tasks:
     cmds:
       - scripts/validate-live-pi-agent.sh
 
-  live:claude:
-    desc: Run live Claude Agent SDK adapter and packaged process validation
-    cmds:
-      - scripts/validate-live-claude-agent-sdk.sh
-
   live:resources:
     desc: Run live packaged resource command validation over NATS
     cmds:

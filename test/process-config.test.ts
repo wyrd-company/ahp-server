@@ -12,10 +12,6 @@ test('reads server process configuration from environment', () => {
     AHP_GRPC_UNIX_SOCKET: '/tmp/ahp.sock',
     AHP_STORAGE_DIR: 'relative-storage',
     AHP_DEFAULT_DIRECTORY: '/workspaces/example',
-    CLAUDE_AGENT_SDK_ENABLED: '1',
-    CLAUDE_AGENT_SDK_MODEL: 'claude-test',
-    CLAUDE_AGENT_SDK_EXECUTABLE: '/usr/local/bin/claude',
-    CLAUDE_AGENT_SDK_PERMISSION_MODE: 'dontAsk',
     PI_AGENT_PROVIDER: 'opencode-go',
     OPENCODE_API_KEY: 'pi-key',
     PI_AGENT_MODEL: 'pi-model',
@@ -28,10 +24,6 @@ test('reads server process configuration from environment', () => {
   assert.equal(config.grpcUnixSocket, '/tmp/ahp.sock');
   assert.ok(config.storageDirectory.endsWith('/relative-storage'));
   assert.equal(config.defaultDirectory, 'file:///workspaces/example');
-  assert.equal(config.claudeAgentSdkConfigured, true);
-  assert.equal(config.claudeAgentSdkModel, 'claude-test');
-  assert.equal(config.claudeAgentSdkExecutable, '/usr/local/bin/claude');
-  assert.equal(config.claudeAgentSdkPermissionMode, 'dontAsk');
   assert.equal(config.piAgentProvider, 'opencode-go');
   assert.equal(config.piAgentBaseUrl, 'https://opencode.ai/zen/go/v1');
   assert.equal(config.piAgentApiKey, 'pi-key');
@@ -40,7 +32,7 @@ test('reads server process configuration from environment', () => {
 
 test('requires at least one transport and at least one provider', () => {
   assert.throws(
-    () => readServerProcessConfig({ CLAUDE_AGENT_SDK_ENABLED: 'true' }),
+    () => readServerProcessConfig({ PI_AGENT_MODEL: 'pi-model' }),
     /configure at least one transport/,
   );
   assert.throws(
@@ -60,12 +52,13 @@ test('requires at least one transport and at least one provider', () => {
 test('allows gRPC Unix socket as the only transport', () => {
   const config = readServerProcessConfig({
     AHP_GRPC_UDS_PATH: 'relative.sock',
-    CLAUDE_AGENT_SDK_ENABLED: 'true',
+    OPENCODE_API_KEY: 'pi-key',
+    PI_AGENT_MODEL: 'pi-model',
   });
 
   assert.ok(config.grpcUnixSocket?.endsWith('/relative.sock'));
   assert.equal(config.natsUrl, undefined);
-  assert.equal(config.claudeAgentSdkConfigured, true);
+  assert.equal(config.piAgentProvider, 'opencode-go');
 });
 
 test('allows explicit Pi Agent key and base URL overrides', () => {
@@ -82,13 +75,14 @@ test('allows explicit Pi Agent key and base URL overrides', () => {
   assert.equal(config.piAgentModel, 'pi-model');
 });
 
-test('allows Claude Agent SDK as the only provider', () => {
+test('allows OPENCODE_API_KEY as the default Pi Agent key', () => {
   const config = readServerProcessConfig({
     NATS_URL: 'nats://127.0.0.1:4222',
-    CLAUDE_AGENT_SDK_ENABLED: 'true',
+    OPENCODE_API_KEY: 'pi-key',
+    PI_AGENT_MODEL: 'pi-model',
   });
 
-  assert.equal(config.claudeAgentSdkConfigured, true);
-  assert.equal(config.claudeAgentSdkPermissionMode, 'dontAsk');
-  assert.equal(config.piAgentProvider, undefined);
+  assert.equal(config.piAgentProvider, 'opencode-go');
+  assert.equal(config.piAgentApiKey, 'pi-key');
+  assert.equal(config.piAgentModel, 'pi-model');
 });

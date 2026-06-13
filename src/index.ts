@@ -15,7 +15,6 @@ export {
   createInMemoryTransportPair,
   createInProcessAhpClientTransport,
 } from './transport/in-memory.js';
-export { createClaudeAgentSdkProvider, AnthropicClaudeAgentSdkClient } from './claude-agent-sdk/index.js';
 export {
   AhpGrpcUdsServer,
   GrpcAhpClientTransport,
@@ -59,15 +58,6 @@ export type {
   TransportFrame,
 } from './types.js';
 export type { FileSystemSessionStoreOptions } from './store.js';
-export type {
-  ClaudeAgentSdkClient,
-  ClaudeAgentSdkMessage,
-  ClaudeAgentSdkOptions,
-  ClaudeAgentSdkProviderOptions,
-  ClaudeAgentSdkQuery,
-  ClaudeAgentSdkQueryParams,
-  ClaudeAgentSdkUserMessage,
-} from './claude-agent-sdk/index.js';
 export type {
   AhpGrpcUdsClientTransportOptions,
   AhpGrpcUdsServerOptions,

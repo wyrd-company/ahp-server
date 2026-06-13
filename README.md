@@ -14,13 +14,12 @@ This repository contains the AHP server core and packaged server process:
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
 - A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints and exposes active-client tools through OpenAI-compatible tool calls.
-- A Claude Agent SDK adapter that streams Claude SDK turns through AHP sessions and exposes active-client tools through a local Streamable HTTP MCP bridge.
 - File-backed AHP `resource*` commands constrained to configured local roots.
 - Transport adapters provided by sibling packages, with TypeScript as the first implementation:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
   - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
-- Optional provider adapters are published as sibling packages and are imported by host applications deliberately. For Codex App Server, use `@wyrd-company/ahp-codex-app-server`.
-- Gated live integration tests for real NATS, real Pi/OpenCode Go, real Claude Agent SDK, resource commands, and packaged server-process paths.
+- Optional provider adapters are published as sibling packages and are imported by host applications deliberately. Use `@wyrd-company/ahp-codex-app-server`, `@wyrd-company/ahp-claude-agent-sdk`, or `@wyrd-company/ahp-cursor-sdk` when wiring those runtimes.
+- Gated live integration tests for real NATS, real Pi/OpenCode Go, resource commands, and packaged server-process paths.
 
 The normal test suite validates the AHP client/server flow, active-client tool routing, resource commands, packaged process behavior, and NATS/gRPC transport wiring.
 
@@ -84,8 +83,8 @@ The server supports active-client tools as a provider-agnostic capability:
 - `reportInvocation` resolves with the owning client's `session/toolCallComplete` result so provider runtimes can return tool output to their native tool-call flow.
 - The server owns trusted correlation for session URI, turn id, tool call id, tool name, and owning client id. Tool input is not trusted for those fields.
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
-- The Claude Agent SDK provider registers those tools with Claude through a per-session local Streamable HTTP MCP server named `activeClientTools`.
 - The Pi Agent provider sends those tools as OpenAI-compatible `tools`, forwards model `tool_calls` through AHP, and continues the chat-completions loop with OpenAI `tool` result messages.
+- Optional provider packages map active-client tools to provider-specific tool surfaces, such as Streamable HTTP MCP or runtime-native tool APIs.
 
 ## NATS Convention
 
@@ -124,7 +123,8 @@ For gRPC over a Unix domain socket:
 
 ```bash
 AHP_GRPC_UNIX_SOCKET=/tmp/ahp-server/ahp.sock \
-CLAUDE_AGENT_SDK_ENABLED=1 \
+PI_AGENT_MODEL=deepseek-v4-flash \
+OPENCODE_API_KEY=... \
 AHP_STORAGE_DIR=/workspace-storage/ahp-server \
 ahp-server
 ```
@@ -142,31 +142,17 @@ AHP_STORAGE_DIR=/workspace-storage/ahp-server \
 ahp-server
 ```
 
-For Claude Agent SDK:
-
-```bash
-NATS_URL=nats://nats:4222 \
-CLAUDE_AGENT_SDK_ENABLED=1 \
-CLAUDE_AGENT_SDK_MODEL=claude-sonnet-4-6 \
-AHP_STORAGE_DIR=/workspace-storage/ahp-server \
-ahp-server
-```
-
 Configuration:
 
 - Configure at least one transport:
   - `NATS_URL` for the NATS transport.
   - `AHP_GRPC_UNIX_SOCKET` for the gRPC Unix domain socket transport. `AHP_GRPC_UDS_PATH` is accepted as an alias.
-- Configure at least one provider:
-  - Claude Agent SDK: `CLAUDE_AGENT_SDK_ENABLED=1`, or set `CLAUDE_AGENT_SDK_MODEL` / `CLAUDE_AGENT_SDK_EXECUTABLE`.
+- Configure at least one built-in provider:
   - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp` when NATS is enabled.
 - `AHP_SERVER_ID` defaults to `server` when NATS is enabled.
 - `AHP_CLIENT_ID` defaults to `client` when NATS is enabled.
-- `CLAUDE_AGENT_SDK_MODEL` is optional; when omitted, the Claude SDK uses its default model.
-- `CLAUDE_AGENT_SDK_EXECUTABLE` optionally points at a Claude Code executable instead of the SDK bundled binary.
-- `CLAUDE_AGENT_SDK_PERMISSION_MODE` defaults to `dontAsk`.
 - `PI_AGENT_BASE_URL` is optional for built-in Pi providers. `opencode-go` defaults to `https://opencode.ai/zen/go/v1`.
 - `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
 - `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory and packaged-process resource root. Plain paths are converted to `file://` URIs.
@@ -180,9 +166,9 @@ import {
   AhpServer,
   FileSystemSessionStore,
   createInProcessAhpClientTransport,
-  createClaudeAgentSdkProvider,
   createPiAgentProvider,
 } from '@wyrd-company/ahp-server';
+import { createClaudeAgentSdkProvider } from '@wyrd-company/ahp-claude-agent-sdk';
 import {
   createNatsServerTransport,
   ahpNatsSubjects,
@@ -242,7 +228,6 @@ const inProcess = createInProcessAhpClientTransport(server);
 npm install
 npm run verify
 task live:pi
-task live:claude
 task live:resources
 ```
 
@@ -259,10 +244,6 @@ Live validation is opt-in because it requires external processes and model acces
 # The task loads .env from this repository root when present.
 task live:pi
 
-# Validate the Claude Agent SDK adapter and packaged server process.
-# The task loads .env from this repository root when present.
-task live:claude
-
 # Validate packaged file resource commands over Docker NATS.
 task live:resources
 
@@ -273,13 +254,6 @@ PI_AGENT_MODEL=deepseek-v4-flash
 # PI_AGENT_PROVIDER=opencode-go
 # PI_AGENT_BASE_URL=https://opencode.ai/zen/go/v1
 # PI_AGENT_API_KEY=...
-
-# .env example for Claude Agent SDK live validation:
-CLAUDE_AGENT_SDK_ENABLED=1
-# Optional:
-# CLAUDE_AGENT_SDK_MODEL=claude-sonnet-4-6
-# CLAUDE_AGENT_SDK_EXECUTABLE=/path/to/claude
-# CLAUDE_AGENT_SDK_PERMISSION_MODE=dontAsk
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js
