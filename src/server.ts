@@ -51,6 +51,8 @@ import type {
   SessionStore,
   StoredSession,
   TransportFrame,
+  ResumableAgentProvider,
+  ResumableAgentSessionContext,
 } from './types.js';
 
 interface ClientConnection {
@@ -230,7 +232,7 @@ export class AhpServer {
     }
   }
 
-  private initialize(connection: ClientConnection, params: InitializeParams): InitializeResult {
+  private async initialize(connection: ClientConnection, params: InitializeParams): Promise<InitializeResult> {
     const protocolVersion = params.protocolVersions.find(version =>
       this.supportedProtocolVersions.includes(version),
     );
@@ -244,10 +246,12 @@ export class AhpServer {
     connection.clientId = params.clientId;
     connection.initialized = true;
 
-    const snapshots = (params.initialSubscriptions ?? []).map(uri => {
+    const snapshots = [];
+    for (const uri of params.initialSubscriptions ?? []) {
       connection.subscriptions.add(uri);
-      return this.snapshot(uri);
-    });
+      await this.tryResumeSessionForUri(uri);
+      snapshots.push(this.snapshot(uri));
+    }
 
     return {
       protocolVersion,
@@ -257,12 +261,13 @@ export class AhpServer {
     };
   }
 
-  private reconnect(connection: ClientConnection, params: ReconnectParams): ReconnectResult {
+  private async reconnect(connection: ClientConnection, params: ReconnectParams): Promise<ReconnectResult> {
     connection.clientId = params.clientId;
     connection.initialized = true;
     connection.subscriptions.clear();
     for (const uri of params.subscriptions) {
       connection.subscriptions.add(uri);
+      await this.tryResumeSessionForUri(uri);
     }
     return {
       type: 'snapshot',
@@ -270,8 +275,9 @@ export class AhpServer {
     } as unknown as ReconnectResult;
   }
 
-  private subscribe(connection: ClientConnection, params: SubscribeParams): SubscribeResult {
+  private async subscribe(connection: ClientConnection, params: SubscribeParams): Promise<SubscribeResult> {
     connection.subscriptions.add(params.channel);
+    await this.tryResumeSessionForUri(params.channel);
     return { snapshot: this.snapshot(params.channel) };
   }
 
@@ -552,11 +558,23 @@ export class AhpServer {
   }
 
   private async startAgentTurn(session: StoredSession, turnId: string, message: Message): Promise<void> {
-    if (!session.agentSession) {
+    try {
+      await this.resumeAgentSession(session);
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
       this.applySessionAction(session.uri, {
         type: ACTION.SessionError,
         turnId,
-        error: { errorType: 'session.notReady', message: 'session backend is not ready' },
+        error: { errorType: 'provider.resumeSession', message: messageText },
+      } as StateAction);
+      return;
+    }
+    const agentSession = session.agentSession;
+    if (!agentSession) {
+      this.applySessionAction(session.uri, {
+        type: ACTION.SessionError,
+        turnId,
+        error: { errorType: 'provider.resumeSession', message: 'provider resume did not return a session' },
       } as StateAction);
       return;
     }
@@ -577,7 +595,7 @@ export class AhpServer {
     };
 
     try {
-      await session.agentSession.sendUserMessage(message, sink, abortController.signal, turnId);
+      await agentSession.sendUserMessage(message, sink, abortController.signal, turnId);
     } catch (error) {
       if (abortController.signal.aborted) {
         return;
@@ -589,6 +607,66 @@ export class AhpServer {
         error: { errorType: 'agent.turn', message: messageText },
       } as StateAction);
     }
+  }
+
+  private async tryResumeSessionForUri(uri: URI): Promise<void> {
+    if (uri === ROOT_URI) {
+      return;
+    }
+    const session = this.store.getSession(uri);
+    if (!session) {
+      return;
+    }
+    try {
+      await this.resumeAgentSession(session);
+    } catch {
+      // Reconnect and subscribe should still return the persisted AHP snapshot.
+      // A subsequent turn will surface the resume failure with turn context.
+    }
+  }
+
+  private async resumeAgentSession(session: StoredSession): Promise<void> {
+    if (session.agentSession) {
+      return;
+    }
+    if (session.resumePromise) {
+      return session.resumePromise;
+    }
+    session.resumePromise = this.createResumedAgentSession(session).finally(() => {
+      session.resumePromise = undefined;
+    });
+    return session.resumePromise;
+  }
+
+  private async createResumedAgentSession(session: StoredSession): Promise<void> {
+    const providerId = session.state.summary.provider;
+    const provider = this.providers.get(providerId);
+    if (!provider) {
+      throw new Error(`provider not found for persisted session: ${providerId}`);
+    }
+    if (!isResumableAgentProvider(provider)) {
+      throw new Error(`provider does not support session resume: ${providerId}`);
+    }
+    session.agentSession = await provider.resumeSession(this.resumeSessionContext(session, providerId));
+    await this.syncActiveClientTools(session);
+  }
+
+  private resumeSessionContext(session: StoredSession, providerId: string): ResumableAgentSessionContext {
+    return {
+      sessionUri: session.uri,
+      providerId,
+      workingDirectory: session.state.summary.workingDirectory,
+      model: session.state.summary.model,
+      config: session.state.config?.values,
+      activeClientId: session.state.activeClient?.clientId,
+      activeClientTools: activeClientToolsFromState(session.state),
+      activeClientToolSink: {
+        reportInvocation: invocation => {
+          return this.reportActiveClientToolInvocation(session.uri, invocation);
+        },
+      },
+      state: session.state,
+    };
   }
 
   private snapshot(uri: URI): Snapshot {
@@ -682,6 +760,10 @@ function activeClientToolsFromState(state: SessionState): { clientId: string; to
   return state.activeClient
     ? { clientId: state.activeClient.clientId, tools: state.activeClient.tools }
     : undefined;
+}
+
+function isResumableAgentProvider(provider: AgentProvider): provider is ResumableAgentProvider {
+  return 'resumeSession' in provider && typeof provider.resumeSession === 'function';
 }
 
 function isClientToolResultAction(action: StateAction): action is StateAction & { toolCallId: string } {

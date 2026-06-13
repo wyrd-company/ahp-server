@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
 import type { AhpTransport, JsonRpcMessage, TransportFrame } from '@microsoft/agent-host-protocol/client';
 import type { AgentInfo, Message, SessionState, StateAction } from '@microsoft/agent-host-protocol';
 
-import { AhpServer, createInMemoryTransportPair, createInProcessAhpClientTransport } from '../src/index.js';
-import type { AgentProvider, AgentSession, AgentTurnSink } from '../src/index.js';
+import { AhpServer, FileSystemSessionStore, createInMemoryTransportPair, createInProcessAhpClientTransport } from '../src/index.js';
+import type {
+  AgentProvider,
+  AgentSession,
+  AgentTurnSink,
+  ResumableAgentProvider,
+  ResumableAgentSessionContext,
+} from '../src/index.js';
 
 const runningServers: Array<Promise<void>> = [];
 
@@ -135,6 +144,140 @@ test('returns listSessions and fetchTurns results', async () => {
   await client.shutdown();
 });
 
+test('resumes persisted filesystem sessions during reconnect', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ahp-resume-'));
+  const sessionUri = 'ahp-session:/resumable-session';
+  const resumedContexts: ResumableAgentSessionContext[] = [];
+
+  try {
+    const firstServer = new AhpServer({
+      providers: [createResumableEchoProvider('created')],
+      store: new FileSystemSessionStore({ directory }),
+    });
+    const [firstClientTransport, firstServerTransport] = createInMemoryTransportPair();
+    runningServers.push(firstServer.accept(firstServerTransport));
+    const firstClient = new AhpClient(firstClientTransport, { requestTimeoutMs: 1_000 });
+    firstClient.connect();
+    await firstClient.initialize({ clientId: 'resume-client', protocolVersions: ['0.3.0'] });
+    await firstClient.request('createSession', {
+      channel: sessionUri,
+      provider: 'resumable-echo',
+      workingDirectory: 'file:///workspaces/example',
+      model: { id: 'test-model' },
+      config: { providerSessionId: 'native-session-1' },
+    });
+    await firstClient.shutdown();
+
+    const secondServer = new AhpServer({
+      providers: [createResumableEchoProvider('resumed', resumedContexts)],
+      store: new FileSystemSessionStore({ directory }),
+    });
+    const [secondClientTransport, secondServerTransport] = createInMemoryTransportPair();
+    runningServers.push(secondServer.accept(secondServerTransport));
+    const secondClient = new AhpClient(secondClientTransport, { requestTimeoutMs: 1_000 });
+    secondClient.connect();
+
+    const reconnect = await secondClient.reconnect({
+      clientId: 'resume-client',
+      lastSeenServerSeq: 0,
+      subscriptions: [sessionUri],
+    });
+    assert.equal(reconnect.type, 'snapshot');
+    assert.equal(resumedContexts.length, 1);
+    assert.equal(resumedContexts[0]?.sessionUri, sessionUri);
+    assert.equal(resumedContexts[0]?.state.summary.resource, sessionUri);
+    assert.equal(resumedContexts[0]?.workingDirectory, 'file:///workspaces/example');
+    assert.equal(resumedContexts[0]?.model?.id, 'test-model');
+    assert.equal(resumedContexts[0]?.config?.providerSessionId, 'native-session-1');
+
+    const subscription = secondClient.attachSubscription(sessionUri);
+    secondClient.dispatch(sessionUri, {
+      type: 'session/turnStarted',
+      turnId: 'resumed-turn',
+      message: userMessage('after restart'),
+    } as StateAction);
+
+    const events = [
+      await subscription.next(),
+      await subscription.next(),
+      await subscription.next(),
+      await subscription.next(),
+    ].map(result => {
+      assert.equal(result.done, false);
+      assert.equal(result.value.type, 'action');
+      return result.value.params.action;
+    });
+
+    assert.deepEqual(events.map(action => action.type), [
+      'session/turnStarted',
+      'session/responsePart',
+      'session/delta',
+      'session/turnComplete',
+    ]);
+    assert.equal((events[2] as StateAction & { content: string } | undefined)?.content, 'resumed: after restart');
+
+    await secondClient.shutdown();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('reconnect still returns persisted snapshots when provider resume is unsupported', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ahp-no-resume-'));
+  const sessionUri = 'ahp-session:/non-resumable-session';
+
+  try {
+    const firstServer = new AhpServer({
+      providers: [createEchoProvider()],
+      store: new FileSystemSessionStore({ directory }),
+    });
+    const [firstClientTransport, firstServerTransport] = createInMemoryTransportPair();
+    runningServers.push(firstServer.accept(firstServerTransport));
+    const firstClient = new AhpClient(firstClientTransport, { requestTimeoutMs: 1_000 });
+    firstClient.connect();
+    await firstClient.initialize({ clientId: 'resume-client', protocolVersions: ['0.3.0'] });
+    await firstClient.request('createSession', { channel: sessionUri, provider: 'echo' });
+    await firstClient.shutdown();
+
+    const secondServer = new AhpServer({
+      providers: [createEchoProvider()],
+      store: new FileSystemSessionStore({ directory }),
+    });
+    const [secondClientTransport, secondServerTransport] = createInMemoryTransportPair();
+    runningServers.push(secondServer.accept(secondServerTransport));
+    const secondClient = new AhpClient(secondClientTransport, { requestTimeoutMs: 1_000 });
+    secondClient.connect();
+
+    const reconnect = await secondClient.reconnect({
+      clientId: 'resume-client',
+      lastSeenServerSeq: 0,
+      subscriptions: [sessionUri],
+    });
+    assert.equal(reconnect.type, 'snapshot');
+    assert.equal(reconnect.snapshots[0]?.resource, sessionUri);
+
+    const subscription = secondClient.attachSubscription(sessionUri);
+    secondClient.dispatch(sessionUri, {
+      type: 'session/turnStarted',
+      turnId: 'unsupported-resume-turn',
+      message: userMessage('after restart'),
+    } as StateAction);
+
+    const turnStarted = await subscription.next();
+    const error = await subscription.next();
+    assert.equal(turnStarted.done, false);
+    assert.equal(error.done, false);
+    assert.equal(error.value.type, 'action');
+    assert.equal(error.value.params.action.type, 'session/error');
+    assert.equal(error.value.params.action.error.errorType, 'provider.resumeSession');
+    assert.match(error.value.params.action.error.message, /provider does not support session resume: echo/);
+
+    await secondClient.shutdown();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('returns createSession errors when provider startup fails', async () => {
   const server = new AhpServer({ providers: [createFailingProvider()] });
   const [clientTransport, serverTransport] = createInMemoryTransportPair();
@@ -199,6 +342,56 @@ function createEchoProvider(): AgentProvider {
           } as StateAction);
         },
       };
+    },
+  };
+}
+
+function createResumableEchoProvider(
+  responsePrefix: string,
+  resumedContexts: ResumableAgentSessionContext[] = [],
+): ResumableAgentProvider {
+  const agent: AgentInfo = {
+    provider: 'resumable-echo',
+    displayName: 'Resumable Echo Agent',
+    description: 'Test agent that echoes after resume.',
+    models: [{ id: 'test-model', provider: 'resumable-echo', name: 'Test Model' }],
+  };
+
+  return {
+    agent,
+    createSession(): AgentSession {
+      return createEchoSession(responsePrefix);
+    },
+    resumeSession(context): AgentSession {
+      resumedContexts.push(context);
+      return createEchoSession(responsePrefix);
+    },
+  };
+}
+
+function createEchoSession(responsePrefix: string): AgentSession {
+  return {
+    async sendUserMessage(message: Message, sink: AgentTurnSink, _signal: AbortSignal, turnId = 'turn'): Promise<void> {
+      const partId = `${turnId}:part`;
+      sink.emit({
+        type: 'session/responsePart',
+        turnId,
+        part: {
+          kind: 'markdown',
+          id: partId,
+          content: '',
+        },
+      } as StateAction);
+      sink.emit({
+        type: 'session/delta',
+        turnId,
+        partId,
+        content: `${responsePrefix}: ${message.text}`,
+      } as StateAction);
+      sink.emit({
+        type: 'session/turnComplete',
+        turnId,
+      } as StateAction);
     },
   };
 }

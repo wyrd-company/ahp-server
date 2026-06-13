@@ -17,6 +17,7 @@ import type {
 import type {
   AgentProvider,
   AgentSession,
+  ResumableAgentProvider,
 } from '@wyrd-company/ahp-provider-kit';
 
 export type {
@@ -27,6 +28,8 @@ export type {
   AgentSession,
   AgentSessionContext,
   AgentTurnSink,
+  ResumableAgentProvider,
+  ResumableAgentSessionContext,
 } from '@wyrd-company/ahp-provider-kit';
 export type {
   AhpTransport,
@@ -45,6 +48,7 @@ export interface StoredSession {
   state: SessionState;
   agentSession?: AgentSession;
   abortController?: AbortController;
+  resumePromise?: Promise<void>;
 }
 
 export interface SessionStore {
