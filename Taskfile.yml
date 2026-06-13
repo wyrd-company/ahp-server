@@ -21,11 +21,6 @@ tasks:
     cmds:
       - npm run verify
 
-  live:pi:
-    desc: Run live Pi Agent adapter and packaged process validation
-    cmds:
-      - scripts/validate-live-pi-agent.sh
-
   live:resources:
     desc: Run live packaged resource command validation over NATS
     cmds:

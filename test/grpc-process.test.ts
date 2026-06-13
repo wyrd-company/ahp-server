@@ -22,10 +22,6 @@ test('starts the server process with gRPC Unix socket as the only transport', as
     serverId: 'server',
     clientId: 'client',
     storageDirectory,
-    piAgentProvider: 'opencode-go',
-    piAgentBaseUrl: 'https://opencode.ai/zen/go/v1',
-    piAgentApiKey: 'pi-key',
-    piAgentModel: 'pi-model',
   } satisfies ServerProcessConfig);
 
   const transport = new GrpcAhpClientTransport({ socketPath });

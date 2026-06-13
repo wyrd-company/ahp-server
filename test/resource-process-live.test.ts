@@ -32,8 +32,6 @@ test('serves file resource commands through the packaged AHP server process over
     AHP_SERVER_ID: serverId,
     AHP_STORAGE_DIR: storageDirectory,
     AHP_DEFAULT_DIRECTORY: resourceRoot,
-    OPENCODE_API_KEY: 'resource-process-key',
-    PI_AGENT_MODEL: 'resource-process-model',
   });
 
   const clientConnection = await connect({ servers: process.env.NATS_URL, timeout: 2_000 });

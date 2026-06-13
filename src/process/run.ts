@@ -4,7 +4,6 @@ import { createGrpcUdsServer, type AhpGrpcUdsServer } from '@wyrd-company/ahp-gr
 
 import { AhpServer } from '../server.js';
 import { FileSystemSessionStore } from '../store.js';
-import { createPiAgentProvider } from '../pi-agent/provider.js';
 import type { ServerTransport } from '../types.js';
 import type { ServerProcessConfig } from './config.js';
 
@@ -15,20 +14,12 @@ export interface RunningServerProcess {
 }
 
 export async function startServerProcess(config: ServerProcessConfig): Promise<RunningServerProcess> {
-  const providers = [];
-  if (config.piAgentBaseUrl && config.piAgentApiKey && config.piAgentModel) {
-    providers.push(createPiAgentProvider({
-      baseUrl: config.piAgentBaseUrl,
-      apiKey: config.piAgentApiKey,
-      defaultModel: config.piAgentModel,
-    }));
-  }
   const server = new AhpServer({
     store: new FileSystemSessionStore({
       directory: config.storageDirectory,
-      agents: providers.map(provider => provider.agent),
+      agents: [],
     }),
-    providers,
+    providers: [],
     defaultDirectory: config.defaultDirectory,
   });
 

@@ -13,13 +13,12 @@ This repository contains the AHP server core and packaged server process:
 - Compatibility tests against the published `@microsoft/agent-host-protocol` TypeScript client.
 - In-memory and filesystem-backed session stores behind a `SessionStore` interface.
 - A pluggable `AgentProvider` interface for optional agent adapters.
-- A Pi Agent adapter that connects to OpenAI-compatible Chat Completions endpoints and exposes active-client tools through OpenAI-compatible tool calls.
 - File-backed AHP `resource*` commands constrained to configured local roots.
 - Transport adapters provided by sibling packages, with TypeScript as the first implementation:
   - `@wyrd-company/ahp-nats` for NATS.io JSON-RPC text frames.
   - `@wyrd-company/ahp-grpc` for gRPC bidirectional streaming over Unix domain sockets.
-- Optional provider adapters are published as sibling packages and are imported by host applications deliberately. Use `@wyrd-company/ahp-codex-app-server`, `@wyrd-company/ahp-claude-agent-sdk`, or `@wyrd-company/ahp-cursor-sdk` when wiring those runtimes.
-- Gated live integration tests for real NATS, real Pi/OpenCode Go, resource commands, and packaged server-process paths.
+- Optional provider adapters are published as sibling packages and are imported by host applications deliberately. Use `@wyrd-company/ahp-codex-app-server`, `@wyrd-company/ahp-claude-agent-sdk`, `@wyrd-company/ahp-cursor-sdk`, or `@wyrd-company/ahp-pi-agent` when wiring those runtimes.
+- Gated live integration tests for real NATS, resource commands, and packaged server-process paths.
 
 The normal test suite validates the AHP client/server flow, active-client tool routing, resource commands, packaged process behavior, and NATS/gRPC transport wiring.
 
@@ -83,7 +82,6 @@ The server supports active-client tools as a provider-agnostic capability:
 - `reportInvocation` resolves with the owning client's `session/toolCallComplete` result so provider runtimes can return tool output to their native tool-call flow.
 - The server owns trusted correlation for session URI, turn id, tool call id, tool name, and owning client id. Tool input is not trusted for those fields.
 - `session/toolCallComplete`, `session/toolCallContentChanged`, and `session/toolCallResultConfirmed` are accepted only from the active client that owns the server-recorded tool call.
-- The Pi Agent provider sends those tools as OpenAI-compatible `tools`, forwards model `tool_calls` through AHP, and continues the chat-completions loop with OpenAI `tool` result messages.
 - Optional provider packages map active-client tools to provider-specific tool surfaces, such as Streamable HTTP MCP or runtime-native tool APIs.
 
 ## NATS Convention
@@ -123,38 +121,21 @@ For gRPC over a Unix domain socket:
 
 ```bash
 AHP_GRPC_UNIX_SOCKET=/tmp/ahp-server/ahp.sock \
-PI_AGENT_MODEL=deepseek-v4-flash \
-OPENCODE_API_KEY=... \
 AHP_STORAGE_DIR=/workspace-storage/ahp-server \
 ahp-server
 ```
 
 NATS and gRPC can be enabled at the same time by setting both `NATS_URL` and `AHP_GRPC_UNIX_SOCKET`.
 
-For Pi Agent / OpenAI-compatible Chat Completions:
-
-```bash
-NATS_URL=nats://nats:4222 \
-PI_AGENT_PROVIDER=opencode-go \
-OPENCODE_API_KEY=... \
-PI_AGENT_MODEL=deepseek-v4-flash \
-AHP_STORAGE_DIR=/workspace-storage/ahp-server \
-ahp-server
-```
-
 Configuration:
 
 - Configure at least one transport:
   - `NATS_URL` for the NATS transport.
   - `AHP_GRPC_UNIX_SOCKET` for the gRPC Unix domain socket transport. `AHP_GRPC_UDS_PATH` is accepted as an alias.
-- Configure at least one built-in provider:
-  - Pi Agent: `PI_AGENT_MODEL` and a provider key. `opencode-go` is the default `PI_AGENT_PROVIDER` and uses `OPENCODE_API_KEY`.
 - `AHP_STORAGE_DIR` defaults to `.ahp-server`.
 - `AHP_NATS_NAMESPACE` defaults to `ahp` when NATS is enabled.
 - `AHP_SERVER_ID` defaults to `server` when NATS is enabled.
 - `AHP_CLIENT_ID` defaults to `client` when NATS is enabled.
-- `PI_AGENT_BASE_URL` is optional for built-in Pi providers. `opencode-go` defaults to `https://opencode.ai/zen/go/v1`.
-- `PI_AGENT_API_KEY` can override the provider-specific key when testing custom OpenAI-compatible endpoints.
 - `AHP_DEFAULT_DIRECTORY` optionally sets the AHP default directory and packaged-process resource root. Plain paths are converted to `file://` URIs.
 
 When NATS is enabled, the process subscribes and publishes using the documented NATS subject convention for the configured server/client IDs. When gRPC is enabled, the process listens on the configured Unix socket and accepts one AHP client stream per gRPC `Connect` call.
@@ -166,9 +147,9 @@ import {
   AhpServer,
   FileSystemSessionStore,
   createInProcessAhpClientTransport,
-  createPiAgentProvider,
 } from '@wyrd-company/ahp-server';
 import { createClaudeAgentSdkProvider } from '@wyrd-company/ahp-claude-agent-sdk';
+import { createPiCodingAgentProvider } from '@wyrd-company/ahp-pi-agent';
 import {
   createNatsServerTransport,
   ahpNatsSubjects,
@@ -189,11 +170,7 @@ const server = new AhpServer({
   defaultDirectory: 'file:///workspace',
   resourceRoots: ['file:///workspace'],
   providers: [
-    createPiAgentProvider({
-      baseUrl: 'https://opencode.ai/zen/go/v1',
-      apiKey: process.env.OPENCODE_API_KEY!,
-      defaultModel: 'deepseek-v4-flash',
-    }),
+    createPiCodingAgentProvider(),
     createClaudeAgentSdkProvider({
       defaultModel: 'claude-sonnet-4-6',
       permissionMode: 'dontAsk',
@@ -227,7 +204,6 @@ const inProcess = createInProcessAhpClientTransport(server);
 ```bash
 npm install
 npm run verify
-task live:pi
 task live:resources
 ```
 
@@ -240,20 +216,8 @@ task live:resources
 Live validation is opt-in because it requires external processes and model access:
 
 ```bash
-# Validate the Pi Agent adapter and packaged server process.
-# The task loads .env from this repository root when present.
-task live:pi
-
 # Validate packaged file resource commands over Docker NATS.
 task live:resources
-
-# .env example for Pi Agent live validation:
-OPENCODE_API_KEY=...
-PI_AGENT_MODEL=deepseek-v4-flash
-# Optional overrides:
-# PI_AGENT_PROVIDER=opencode-go
-# PI_AGENT_BASE_URL=https://opencode.ai/zen/go/v1
-# PI_AGENT_API_KEY=...
 
 # Start NATS in Docker and discover its container IP.
 docker run -d --name ahp-server-nats-validation nats:2.10-alpine -js

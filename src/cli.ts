@@ -21,9 +21,7 @@ try {
     subjects,
     grpcUnixSocket: config.grpcUnixSocket,
     storageDirectory: config.storageDirectory,
-    providers: [
-      ...(config.piAgentProvider ? ['pi-agent'] : []),
-    ],
+    providers: [],
   }));
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {

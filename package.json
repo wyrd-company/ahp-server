@@ -36,10 +36,6 @@
       "import": "./dist/src/process/index.js",
       "types": "./dist/src/process/index.d.ts"
     },
-    "./pi-agent": {
-      "import": "./dist/src/pi-agent/index.js",
-      "types": "./dist/src/pi-agent/index.d.ts"
-    },
     "./provider-kit": {
       "import": "./dist/src/provider-kit.js",
       "types": "./dist/src/provider-kit.d.ts"
@@ -51,7 +47,6 @@
     "prepack": "npm run clean && npm run build",
     "prepublishOnly": "npm run verify",
     "test": "node --test --import tsx test/*.test.ts",
-    "test:live:pi": "scripts/validate-live-pi-agent.sh",
     "test:live:resources": "scripts/validate-live-resources.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
