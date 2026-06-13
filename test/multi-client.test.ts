@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 
 import { AhpClient } from '@microsoft/agent-host-protocol/client';
-import type { AgentInfo, Message, StateAction } from '@microsoft/agent-host-protocol';
+import type { AgentInfo, Message, SessionState, StateAction } from '@microsoft/agent-host-protocol';
 
 import {
   AhpServer,
@@ -36,6 +36,55 @@ test('serves multiple AHP clients over independent transports at the same time',
   } finally {
     await first.client.shutdown().catch(() => undefined);
     await second.client.shutdown().catch(() => undefined);
+  }
+});
+
+test('allows a client on another transport to join an existing session', async () => {
+  const server = new AhpServer({ providers: [createEchoProvider()] });
+  const active = createClient(server);
+  const observer = createClient(server);
+  const sessionUri = `ahp-session:/joined-${Date.now()}`;
+
+  try {
+    active.client.connect();
+    observer.client.connect();
+    await active.client.initialize({ clientId: 'active-client', protocolVersions: ['0.3.0'] });
+    await observer.client.initialize({ clientId: 'observer-client', protocolVersions: ['0.3.0'] });
+
+    await active.client.request('createSession', { channel: sessionUri, provider: 'echo' });
+    const { result, subscription } = await observer.client.subscribe(sessionUri);
+    const snapshotState = result.snapshot?.state as SessionState | undefined;
+
+    assert.equal(result.snapshot?.resource, sessionUri);
+    assert.equal(snapshotState?.summary.resource, sessionUri);
+    assert.equal(snapshotState?.summary.provider, 'echo');
+
+    active.client.dispatch(sessionUri, {
+      type: 'session/turnStarted',
+      turnId: 'joined-turn',
+      message: userMessage('hello joined observer'),
+    } as StateAction);
+
+    const actions = [
+      await subscription.next(),
+      await subscription.next(),
+      await subscription.next(),
+      await subscription.next(),
+    ].map(event => {
+      assert.equal(event.done, false);
+      assert.equal(event.value.type, 'action');
+      return event.value.params.action;
+    });
+
+    assert.deepEqual(actions.map(action => action.type), [
+      'session/turnStarted',
+      'session/responsePart',
+      'session/delta',
+      'session/turnComplete',
+    ]);
+  } finally {
+    await active.client.shutdown().catch(() => undefined);
+    await observer.client.shutdown().catch(() => undefined);
   }
 });
 
