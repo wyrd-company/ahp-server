@@ -74,6 +74,7 @@ interface PersistedSessionFile {
   readonly session: {
     readonly uri: URI;
     readonly state: SessionState;
+    readonly providerResumeState?: StoredSession['providerResumeState'];
   };
 }
 
@@ -151,6 +152,9 @@ export class FileSystemSessionStore implements SessionStore {
       this.sessions.set(parsed.session.uri, {
         uri: parsed.session.uri,
         state: parsed.session.state,
+        ...(parsed.session.providerResumeState !== undefined
+          ? { providerResumeState: parsed.session.providerResumeState }
+          : {}),
       });
     }
   }
@@ -161,6 +165,7 @@ export class FileSystemSessionStore implements SessionStore {
       session: {
         uri: session.uri,
         state: session.state,
+        ...(session.providerResumeState !== undefined ? { providerResumeState: session.providerResumeState } : {}),
       },
     };
     const path = this.sessionPath(session.uri);

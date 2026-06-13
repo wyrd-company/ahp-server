@@ -37,6 +37,30 @@ test('persists session state across store instances', () => {
   }
 });
 
+test('persists provider-native resume state across store instances', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ahp-store-'));
+  try {
+    const state = sessionState('ahp-session:/provider-resume');
+    const store = new FileSystemSessionStore({ directory });
+    store.addSession({
+      uri: state.summary.resource,
+      state,
+      providerResumeState: { threadId: 'native-thread-1' },
+    });
+
+    store.updateSession(state.summary.resource, session => {
+      session.providerResumeState = { threadId: 'native-thread-2' };
+    });
+
+    const reloaded = new FileSystemSessionStore({ directory });
+    const restored = reloaded.getSession(state.summary.resource);
+    assert.ok(restored);
+    assert.deepEqual(restored.providerResumeState, { threadId: 'native-thread-2' });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('removes persisted session files', () => {
   const directory = mkdtempSync(join(tmpdir(), 'ahp-store-'));
   try {

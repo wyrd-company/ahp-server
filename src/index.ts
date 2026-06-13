@@ -36,6 +36,7 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   JsonRpcSuccessResponse,
+  ProviderResumeState,
   ResumableAgentProvider,
   ResumableAgentSessionContext,
   ServerTransport,

@@ -356,6 +356,7 @@ export class AhpServer {
         },
       });
       await this.syncActiveClientTools(stored);
+      await this.persistProviderResumeState(stored);
       this.applySessionAction(params.channel, { type: ACTION.SessionReady } as StateAction);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -606,6 +607,15 @@ export class AhpServer {
         turnId,
         error: { errorType: 'agent.turn', message: messageText },
       } as StateAction);
+    } finally {
+      await this.persistProviderResumeState(session).catch(error => {
+        const messageText = error instanceof Error ? error.message : String(error);
+        this.applySessionAction(session.uri, {
+          type: ACTION.SessionError,
+          turnId,
+          error: { errorType: 'provider.resumeState', message: messageText },
+        } as StateAction);
+      });
     }
   }
 
@@ -649,6 +659,7 @@ export class AhpServer {
     }
     session.agentSession = await provider.resumeSession(this.resumeSessionContext(session, providerId));
     await this.syncActiveClientTools(session);
+    await this.persistProviderResumeState(session);
   }
 
   private resumeSessionContext(session: StoredSession, providerId: string): ResumableAgentSessionContext {
@@ -666,7 +677,18 @@ export class AhpServer {
         },
       },
       state: session.state,
+      resumeState: session.providerResumeState,
     };
+  }
+
+  private async persistProviderResumeState(session: StoredSession): Promise<void> {
+    const providerResumeState = await session.agentSession?.getResumeState?.();
+    if (providerResumeState === undefined) {
+      return;
+    }
+    this.store.updateSession(session.uri, stored => {
+      stored.providerResumeState = providerResumeState;
+    });
   }
 
   private snapshot(uri: URI): Snapshot {

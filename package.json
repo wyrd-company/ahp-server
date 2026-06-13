@@ -1,6 +1,6 @@
 {
   "name": "@wyrd-company/ahp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Production-shaped TypeScript Agent Host Protocol server with pluggable agent adapters.",
   "type": "module",
   "license": "MIT",
@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@microsoft/agent-host-protocol": "^0.3.0",
-    "@wyrd-company/ahp-provider-kit": "^0.2.0"
+    "@wyrd-company/ahp-provider-kit": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

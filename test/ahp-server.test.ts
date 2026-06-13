@@ -13,6 +13,7 @@ import type {
   AgentProvider,
   AgentSession,
   AgentTurnSink,
+  ProviderResumeState,
   ResumableAgentProvider,
   ResumableAgentSessionContext,
 } from '../src/index.js';
@@ -148,10 +149,11 @@ test('resumes persisted filesystem sessions during reconnect', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'ahp-resume-'));
   const sessionUri = 'ahp-session:/resumable-session';
   const resumedContexts: ResumableAgentSessionContext[] = [];
+  const firstResumeState: ProviderResumeState = { nativeSessionId: 'native-session-1' };
 
   try {
     const firstServer = new AhpServer({
-      providers: [createResumableEchoProvider('created')],
+      providers: [createResumableEchoProvider('created', [], firstResumeState)],
       store: new FileSystemSessionStore({ directory }),
     });
     const [firstClientTransport, firstServerTransport] = createInMemoryTransportPair();
@@ -168,8 +170,11 @@ test('resumes persisted filesystem sessions during reconnect', async () => {
     });
     await firstClient.shutdown();
 
+    const persisted = new FileSystemSessionStore({ directory }).getSession(sessionUri);
+    assert.deepEqual(persisted?.providerResumeState, firstResumeState);
+
     const secondServer = new AhpServer({
-      providers: [createResumableEchoProvider('resumed', resumedContexts)],
+      providers: [createResumableEchoProvider('resumed', resumedContexts, { nativeSessionId: 'native-session-2' })],
       store: new FileSystemSessionStore({ directory }),
     });
     const [secondClientTransport, secondServerTransport] = createInMemoryTransportPair();
@@ -189,6 +194,7 @@ test('resumes persisted filesystem sessions during reconnect', async () => {
     assert.equal(resumedContexts[0]?.workingDirectory, 'file:///workspaces/example');
     assert.equal(resumedContexts[0]?.model?.id, 'test-model');
     assert.equal(resumedContexts[0]?.config?.providerSessionId, 'native-session-1');
+    assert.deepEqual(resumedContexts[0]?.resumeState, firstResumeState);
 
     const subscription = secondClient.attachSubscription(sessionUri);
     secondClient.dispatch(sessionUri, {
@@ -215,6 +221,8 @@ test('resumes persisted filesystem sessions during reconnect', async () => {
       'session/turnComplete',
     ]);
     assert.equal((events[2] as StateAction & { content: string } | undefined)?.content, 'resumed: after restart');
+    const updated = new FileSystemSessionStore({ directory }).getSession(sessionUri);
+    assert.deepEqual(updated?.providerResumeState, { nativeSessionId: 'native-session-2' });
 
     await secondClient.shutdown();
   } finally {
@@ -349,6 +357,7 @@ function createEchoProvider(): AgentProvider {
 function createResumableEchoProvider(
   responsePrefix: string,
   resumedContexts: ResumableAgentSessionContext[] = [],
+  resumeState?: ProviderResumeState,
 ): ResumableAgentProvider {
   const agent: AgentInfo = {
     provider: 'resumable-echo',
@@ -360,16 +369,16 @@ function createResumableEchoProvider(
   return {
     agent,
     createSession(): AgentSession {
-      return createEchoSession(responsePrefix);
+      return createEchoSession(responsePrefix, resumeState);
     },
     resumeSession(context): AgentSession {
       resumedContexts.push(context);
-      return createEchoSession(responsePrefix);
+      return createEchoSession(responsePrefix, resumeState);
     },
   };
 }
 
-function createEchoSession(responsePrefix: string): AgentSession {
+function createEchoSession(responsePrefix: string, resumeState?: ProviderResumeState): AgentSession {
   return {
     async sendUserMessage(message: Message, sink: AgentTurnSink, _signal: AbortSignal, turnId = 'turn'): Promise<void> {
       const partId = `${turnId}:part`;
@@ -392,6 +401,9 @@ function createEchoSession(responsePrefix: string): AgentSession {
         type: 'session/turnComplete',
         turnId,
       } as StateAction);
+    },
+    getResumeState() {
+      return resumeState;
     },
   };
 }

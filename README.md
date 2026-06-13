@@ -27,7 +27,7 @@ The server is intended to be protocol-compliant with the Microsoft AHP TypeScrip
 
 Adapters and transports are explicit packages. Users import optional packages and wire them into the server deliberately; runtime package discovery is not part of the first design. NATS and gRPC transports now live in sibling repos so their wire contracts can evolve toward multi-language implementations, with TypeScript as the initial implementation.
 
-State can start in memory for tests and short-lived runs, or use `FileSystemSessionStore` to persist session state into a mounted directory across devcontainer rebuilds. Adapter runtime handles are intentionally not serialized; providers that need durable runtime continuity implement `ResumableAgentProvider` from `@wyrd-company/ahp-provider-kit`.
+State can start in memory for tests and short-lived runs, or use `FileSystemSessionStore` to persist session state into a mounted directory across devcontainer rebuilds. Provider adapters that need durable runtime continuity implement `ResumableAgentProvider` and expose provider-native resume metadata through `AgentSession.getResumeState()`.
 
 Security is scoped for local devcontainer/Docker-network use first. Remote and multi-tenant security are not implemented, but the transport and provider boundaries should not make that impossible later.
 
@@ -71,12 +71,13 @@ Root session catalogue notifications are emitted for session add/remove/summary 
 
 ## Session Resume
 
-`FileSystemSessionStore` persists complete AHP `SessionState` snapshots, not provider runtime handles. When a persisted session is loaded without a live provider session, `AhpServer` now attempts lazy provider resume before returning subscribed snapshots from `initialize`, `reconnect`, and `subscribe`, and again before processing a new turn.
+`FileSystemSessionStore` persists complete AHP `SessionState` snapshots plus an opaque provider-owned resume-state blob. When a persisted session is loaded without a live provider session, `AhpServer` attempts lazy provider resume before returning subscribed snapshots from `initialize`, `reconnect`, and `subscribe`, and again before processing a new turn.
 
 Provider adapters opt into runtime resume by implementing `ResumableAgentProvider.resumeSession(context)`. The resume context includes:
 
 - `sessionUri`
 - trusted persisted `state`
+- provider-owned `resumeState` previously returned by `AgentSession.getResumeState()`
 - `workingDirectory`, `model`, and config values recovered from the stored session
 - current active-client identity and tools from the stored session
 - the same server-owned active-client tool sink used for newly-created sessions
