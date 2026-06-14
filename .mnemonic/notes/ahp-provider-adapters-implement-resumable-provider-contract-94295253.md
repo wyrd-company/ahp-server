@@ -1,5 +1,5 @@
 ---
-title: AHP provider adapters implement resumable provider contract
+title: AHP provider adapters persist provider-native resume state
 tags:
   - ahp
   - resume
@@ -9,23 +9,33 @@ tags:
   - release
 lifecycle: permanent
 createdAt: '2026-06-13T23:24:27.109Z'
-updatedAt: '2026-06-13T23:24:27.109Z'
+updatedAt: '2026-06-14T00:06:23.982Z'
 role: summary
 alwaysLoad: false
 project: github-com-wyrd-company-ahp-server
 projectName: ahp-server
 memoryVersion: 1
 ---
-All first-party AHP provider adapters now implement the `ResumableAgentProvider` contract from `@wyrd-company/ahp-provider-kit@0.2.0`.
+AHP resume now includes provider-native durable resume state, not only AHP wrapper reconstruction.
 
 Published releases:
 
-- `@wyrd-company/ahp-codex-app-server@0.2.0`
-- `@wyrd-company/ahp-claude-agent-sdk@0.2.0`
-- `@wyrd-company/ahp-pi-agent@0.3.0`
-- `@wyrd-company/ahp-pi-coding-agent@0.2.0`
-- `@wyrd-company/ahp-cursor-sdk@0.2.0`
+- `@wyrd-company/ahp-provider-kit@0.3.0`
+- `@wyrd-company/ahp-server@0.3.0`
+- `@wyrd-company/ahp-codex-app-server@0.3.0`
+- `@wyrd-company/ahp-claude-agent-sdk@0.3.0`
+- `@wyrd-company/ahp-pi-agent@0.4.0`
+- `@wyrd-company/ahp-pi-coding-agent@0.3.0`
+- `@wyrd-company/ahp-cursor-sdk@0.3.0`
 
-Each adapter has a filesystem-backed restart test proving `ahp-server@0.2.0` can reconnect to a persisted AHP session, call the provider resume hook, and process a new turn through the reconstructed runtime session.
+The provider-kit contract added `ProviderResumeState`, `ResumableAgentSessionContext.resumeState`, and optional `AgentSession.getResumeState()`. `ahp-server` persists the provider-owned resume-state blob in `FileSystemSessionStore`, passes it into `resumeSession`, and refreshes it after create, resume, and each turn.
 
-Resume guarantee: adapters restore the AHP provider runtime from persisted AHP session context. Native transcript or same-provider-session continuity depends on provider-specific durable state. Pi Agent preserves the AHP session URI as Pi `sessionId`; Pi Coding can use durable Pi session options supplied by consumers. Codex, Claude, and Cursor currently reconstruct runtime sessions but do not persist private native thread/query/run state.
+Provider-native behavior:
+
+- Codex App Server stores CAS `threadId` and resumes with `thread/resume`.
+- Claude Agent SDK stores SDK `session_id` and resumes with `options.resume`.
+- Pi Agent stores Pi `sessionId` and passes it back through `AgentOptions.sessionId`.
+- Pi Coding Agent stores Pi `sessionFile` and `sessionId`, then resumes with `SessionManager.open(sessionFile)`; if only a session id is available, it creates a session manager with that id.
+- Cursor SDK stores local Cursor `agentId` and resumes with `Agent.resume(agentId, ...)`.
+
+Known caveat: adapters do not replay a half-streamed provider run after process death. They preserve the native provider session/thread/agent identity for subsequent turns. Cursor live local validation remains blocked by the upstream Cursor SDK free-user local model validation bug; fake-runtime tests cover the adapter path.
